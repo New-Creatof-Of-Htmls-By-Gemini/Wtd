@@ -16,7 +16,6 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          # Исправлен libgl1-mesa-glx на libgl1 и libglx-mesa0
           sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri
       
       - name: Install official Ngrok
@@ -29,7 +28,11 @@ jobs:
       - name: Download and Extract ISO Game Image
         run: |
           mkdir -p game_files
+          
+          # Автоматически получаем прямую ссылку на файл из релиза E
           ISO_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | grep "browser_download_url" | cut -d '"' -f 4 | head -n 1)
+          
+          echo "Found download URL: $ISO_URL"
           
           if [ -z "$ISO_URL" ]; then
             echo "ОШИБКА: Не удалось получить ссылку из релиза E!"
@@ -79,8 +82,8 @@ jobs:
           x11vnc -display :99 -forever -nopw -listen localhost -rfbport 5900 &
           sleep 2
           
-          # Настраиваем noVNC так, чтобы при открытии ссылки сразу запускался стрим
-          cp /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html
+          # Использование sudo гарантирует отсутствие ошибки Permission Denied
+          sudo cp /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html
           websockify --web=/usr/share/novnc/ 6080 localhost:5900 &
           sleep 2
       

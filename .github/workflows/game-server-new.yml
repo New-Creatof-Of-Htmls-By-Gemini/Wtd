@@ -29,27 +29,35 @@ jobs:
         run: |
           mkdir -p game_files
           
-          echo "=== Парсим прямую ссылку с wdfiles.ru ==="
-          PAGE_HTML=$(curl -sL "https://wdfiles.ru/NJjs")
+          echo "=== Получаем прямую ссылку с wdfiles.ru ==="
+          DIRECT_URL="https://wdfiles.ru/d/NJjs"
           
-          # Находим прямую ссылку на .iso файл на странице
-          DIRECT_URL=$(echo "$PAGE_HTML" | grep -oP 'href="\Khttps?://[^"]+\.iso[^"]*' | head -n 1)
+          echo "Пробуем скачать по ссылке: $DIRECT_URL"
+          curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "$DIRECT_URL" -o game.iso
           
-          if [ -z "$DIRECT_URL" ]; then
-            # Запасной вариант поиска любой ссылки на скачивание
-            DIRECT_URL=$(echo "$PAGE_HTML" | grep -oP 'href="\Khttps?://wdfiles\.ru/d/[^"]*' | head -n 1)
+          FILE_SIZE=$(stat -c%s "game.iso" 2>/dev/null || echo 0)
+          
+          if [ "$FILE_SIZE" -lt 10485760 ]; then
+            echo "Прямое скачивание /d/ не сработало, парсим внутренности..."
+            
+            PAGE_HTML=$(curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "https://wdfiles.ru/NJjs")
+            
+            REAL_LINK=$(echo "$PAGE_HTML" | grep -oP 'https?://[^\s"'\''>]+\.iso[^\s"'\''>]*' | head -n 1)
+            
+            if [ -z "$REAL_LINK" ]; then
+              REAL_LINK=$(echo "$PAGE_HTML" | grep -oP 'href="\K[^"]+' | grep -iE '(download|file|\.iso|/d/)' | head -n 1)
+              [[ "$REAL_LINK" =~ ^/ ]] && REAL_LINK="https://wdfiles.ru$REAL_LINK"
+            fi
+            
+            echo "Найдена альтернативная ссылка: $REAL_LINK"
+            curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "$REAL_LINK" -o game.iso
           fi
+
+          echo "=== Проверка скачанного файла ==="
+          ls -lh game.iso
           
-          echo "Прямая ссылка для скачивания: $DIRECT_URL"
-          
-          if [ -n "$DIRECT_URL" ]; then
-            curl -sL "$DIRECT_URL" -o game.iso
-            echo "=== Распаковываем ISO через 7z ==="
-            7z x game.iso -ogame_files/ -y
-          else
-            echo "ОШИБКА: Не удалось получить ссылку с wdfiles.ru!"
-            exit 1
-          fi
+          echo "=== Распаковываем ISO через 7z ==="
+          7z x game.iso -ogame_files/ -y
 
       - name: Setup Display, Window Manager & Audio
         run: |
@@ -69,7 +77,6 @@ jobs:
           wineboot -u
           sleep 3
           
-          # Поиск исполняемого файла игры внутри распакованного ISO
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*setup*" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then

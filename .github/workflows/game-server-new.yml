@@ -1,4 +1,4 @@
-name: What The Dub Server
+name: PartyBox Server
 
 on:
   push:
@@ -16,8 +16,8 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq python3 python3-pip python3-bs4 python3-requests
-      
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq
+
       - name: Install official Ngrok
         run: |
           curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
@@ -25,48 +25,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Fast Download ISO via Python
+      - name: Download PartyBox.zip from Release E
         run: |
           mkdir -p game_files
-          python3 - << 'EOF'
-          import requests
-          from bs4 import BeautifulSoup
-
-          headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-          page_url = "https://wdfiles.ru/NJjs"
-
-          session = requests.Session()
-          res = session.get(page_url, headers=headers)
-          soup = BeautifulSoup(res.text, "html.parser")
-
-          dl_link = None
-          for a in soup.find_all("a", href=True):
-              if "/d/" in a["href"] or "download" in a["href"] or ".iso" in a["href"]:
-                  dl_link = a["href"]
-                  break
-
-          if not dl_link:
-              dl_link = "https://wdfiles.ru/d/NJjs"
-          elif not dl_link.startswith("http"):
-              dl_link = "https://wdfiles.ru" + dl_link
-
-          print(f"Прямая ссылка найдена: {dl_link}")
-
-          print("Скачиваем ISO на высокой скорости...")
-          with session.get(dl_link, headers=headers, stream=True) as r:
-              r.raise_for_status()
-              with open("game.iso", "wb") as f:
-                  for chunk in r.iter_content(chunk_size=8192):
-                      f.write(chunk)
-
-          print("Скачивание завершено успешно!")
-          EOF
-
-          echo "=== Проверяем размер скачанного ISO ==="
-          ls -lh game.iso
           
-          echo "=== Распаковываем ISO через 7z ==="
-          7z x game.iso -ogame_files/ -y
+          # Получаем прямую ссылку на PartyBox.zip из релиза E
+          ZIP_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | jq -r '.assets[] | select(.name | test("PartyBox\\.zip$"; "i")) | .browser_download_url' | head -n 1)
+          
+          echo "Ссылка на ZIP: $ZIP_URL"
+          
+          if [ -n "$ZIP_URL" ] && [ "$ZIP_URL" != "null" ]; then
+            curl -sSLf "$ZIP_URL" -o partybox.zip
+            echo "=== Распаковка PartyBox.zip ==="
+            7z x partybox.zip -ogame_files/ -y
+          else
+            echo "ОШИБКА: PartyBox.zip не найден в релизе E!"
+            exit 1
+          fi
 
       - name: Setup Display, Window Manager & Audio
         run: |
@@ -76,7 +51,7 @@ jobs:
           pulseaudio --start || true
           sleep 3
 
-      - name: Auto-Run Game
+      - name: Run PartyBox in Wine
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
@@ -86,22 +61,20 @@ jobs:
           wineboot -u
           sleep 3
           
-          MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*setup*" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
+          # Ищем главный .exe лаунчера/инсталлятора
+          MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "АВТО-ЗАПУСК ИГРЫ: $MAIN_EXE"
-            GAME_DIR=$(dirname "$MAIN_EXE")
-            EXE_NAME=$(basename "$MAIN_EXE")
-            cd "$GAME_DIR"
-            
-            wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
+            echo "ЗАПУСК PARTYBOX: $MAIN_EXE"
+            cd "$(dirname "$MAIN_EXE")"
+            wine "$(basename "$MAIN_EXE")" > /tmp/game_output.log 2>&1 &
           else
-            echo "ОШИБКА: .exe файл игры не найден внутри ISO!"
+            echo "ОШИБКА: Исполняемый .exe файл не найден внутри ZIP!"
             ls -R game_files
             exit 1
           fi
-          
-          sleep 10
+
+          sleep 5
 
       - name: Start VNC and Websockify
         run: |
@@ -124,7 +97,7 @@ jobs:
           ngrok config add-authtoken $NGROK_AUTHTOKEN
           ngrok http 6080 --log=stdout > /tmp/ngrok.log 2>&1 &
           sleep 5
-          echo "=== ССЫЛКА НА ИГРУ (ОТКРЫВАЙ В БРАУЗЕРЕ) ===" 
+          echo "=== ССЫЛКА НА VNC (ОТКРЫВАЙ В БРАУЗЕРЕ) ===" 
           grep -o 'https://[^"]*ngrok-free.dev' /tmp/ngrok.log || grep -o 'https://[^"]*ngrok-free.app' /tmp/ngrok.log || cat /tmp/ngrok.log
       
       - name: Keep server running

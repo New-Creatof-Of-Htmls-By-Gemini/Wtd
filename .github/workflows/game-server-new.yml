@@ -25,22 +25,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Download and Extract ISO Game Image
+      - name: Download and Extract EXE Game Installer
         run: |
           mkdir -p game_files
           
-          # Автоматическое получение ссылки из релиза E
-          ISO_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | grep "browser_download_url" | cut -d '"' -f 4 | head -n 1)
+          # Находим прямую ссылку на загруженный .exe из релиза E
+          EXE_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | grep "browser_download_url" | cut -d '"' -f 4 | head -n 1)
           
-          echo "Found download URL: $ISO_URL"
+          echo "Found download URL: $EXE_URL"
           
-          if [ -z "$ISO_URL" ]; then
+          if [ -z "$EXE_URL" ]; then
             echo "ОШИБКА: Не удалось получить ссылку из релиза E!"
             exit 1
           fi
 
-          curl -sSLf "$ISO_URL" -o game_file.iso
-          7z x game_file.iso -ogame_files/ -y
+          curl -sSLf "$EXE_URL" -o setup.exe
+          
+          # Распаковываем файлы из установочника напрямую в game_files/
+          7z x setup.exe -ogame_files/ -y || 7z e setup.exe -ogame_files/ -y
+          
+          echo "=== Распакованные файлы ==="
+          ls -R game_files
 
       - name: Setup Display, Window Manager & Audio
         run: |
@@ -61,7 +66,8 @@ jobs:
           wineboot -u
           sleep 5
           
-          MAIN_EXE=$(find game_files -iname "*WhatTheDub*.exe" ! -iname "*setup*" | head -n 1)
+          # Ищем распакованный главный .exe файл игры
+          MAIN_EXE=$(find game_files -iname "*WhatTheDub*.exe" ! -iname "*setup*" ! -iname "*install*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
             echo "Запуск игры: $MAIN_EXE"
@@ -69,11 +75,10 @@ jobs:
             EXE_NAME=$(basename "$MAIN_EXE")
             cd "$GAME_DIR"
             
-            # Заменяем wine64 на wine, добавляем -force-d3d11
             wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
           else
-            echo "Файл игры не найден!"
-            exit 1
+            echo "Главный exe не найден, пробуем запустить сам установщик через Wine..."
+            wine setup.exe /VERYSILENT /NORESTART &
           fi
           
           sleep 12

@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq innoextract
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq
       
       - name: Install official Ngrok
         run: |
@@ -25,17 +25,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Download Game Installer
+      - name: Direct Download ISO from wdfiles
         run: |
           mkdir -p game_files
           
-          EXE_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | jq -r '.assets[] | select(.name | test("\\.(exe|iso|zip|7z)$"; "i")) | .browser_download_url' | head -n 1)
+          echo "=== Парсим прямую ссылку с wdfiles.ru ==="
+          PAGE_HTML=$(curl -sL "https://wdfiles.ru/NJjs")
           
-          if [ -z "$EXE_URL" ] || [ "$EXE_URL" = "null" ]; then
-            EXE_URL="https://github.com/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/download/E/What_the_Dub_rus_v1.01_TDoT.exe"
+          # Находим прямую ссылку на .iso файл на странице
+          DIRECT_URL=$(echo "$PAGE_HTML" | grep -oP 'href="\Khttps?://[^"]+\.iso[^"]*' | head -n 1)
+          
+          if [ -z "$DIRECT_URL" ]; then
+            # Запасной вариант поиска любой ссылки на скачивание
+            DIRECT_URL=$(echo "$PAGE_HTML" | grep -oP 'href="\Khttps?://wdfiles\.ru/d/[^"]*' | head -n 1)
           fi
-
-          curl -sSLf "$EXE_URL" -o setup.exe || curl -sSLf "https://github.com/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/download/E/setup.exe" -o setup.exe
+          
+          echo "Прямая ссылка для скачивания: $DIRECT_URL"
+          
+          if [ -n "$DIRECT_URL" ]; then
+            curl -sL "$DIRECT_URL" -o game.iso
+            echo "=== Распаковываем ISO через 7z ==="
+            7z x game.iso -ogame_files/ -y
+          else
+            echo "ОШИБКА: Не удалось получить ссылку с wdfiles.ru!"
+            exit 1
+          fi
 
       - name: Setup Display, Window Manager & Audio
         run: |
@@ -45,7 +59,7 @@ jobs:
           pulseaudio --start || true
           sleep 3
 
-      - name: Auto-Extract and Auto-Run Game
+      - name: Auto-Run Game
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
@@ -55,24 +69,18 @@ jobs:
           wineboot -u
           sleep 3
           
-          echo "=== Распаковка через innoextract ==="
-          innoextract -d game_files setup.exe || true
-          
-          echo "=== СПИСОК ВСЕХ НАЙДЕННЫХ .EXE ФАЙЛОВ ==="
-          find game_files -type f -iname "*.exe"
-          
-          # Ищем любой .exe файл, кроме системных утилит и краш-хэндлеров
+          # Поиск исполняемого файла игры внутри распакованного ISO
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*setup*" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "НАЙДЕН ИСПОЛНЯЕМЫЙ ФАЙЛ: $MAIN_EXE"
+            echo "АВТО-ЗАПУСК ИГРЫ: $MAIN_EXE"
             GAME_DIR=$(dirname "$MAIN_EXE")
             EXE_NAME=$(basename "$MAIN_EXE")
             cd "$GAME_DIR"
             
             wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
           else
-            echo "ОШИБКА: Ни один подходящий .exe не найден!"
+            echo "ОШИБКА: .exe файл игры не найден!"
             ls -R game_files
             exit 1
           fi
@@ -105,6 +113,6 @@ jobs:
       
       - name: Keep server running
         run: |
-          echo "Сервер работает!"
+          echo "Сервер запущен!"
           sleep 36000
           

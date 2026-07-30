@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq python3 python3-pip python3-bs4 python3-requests
       
       - name: Install official Ngrok
         run: |
@@ -25,14 +25,48 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Download ISO from wdfiles
+      - name: Fast Download ISO via Python
         run: |
           mkdir -p game_files
           
-          echo "=== Скачиваем ISO-образ по прямой ссылке ==="
-          curl -sL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "https://wdfiles.ru/NJjs/WhatTheDub-RU_v2.2.0.4-TDoT-2.3-01.04.2024.iso" -o game.iso
-          
-          echo "=== Проверка скачанного файла ==="
+          python3 -c '
+import requests
+from bs4 import BeautifulSoup
+import re
+import sys
+
+headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+page_url = "https://wdfiles.ru/NJjs"
+
+session = requests.Session()
+res = session.get(page_url, headers=headers)
+soup = BeautifulSoup(res.text, "html.parser")
+
+# Ищем кнопку или ссылку скачивания на странице
+dl_link = None
+for a in soup.find_all("a", href=True):
+    if "/d/" in a["href"] or "download" in a["href"] or ".iso" in a["href"]:
+        dl_link = a["href"]
+        break
+
+if not dl_link:
+    # Запасной прямой роут
+    dl_link = "https://wdfiles.ru/d/NJjs"
+elif not dl_link.startswith("http"):
+    dl_link = "https://wdfiles.ru" + dl_link
+
+print(f"Прямая ссылка найдена: {dl_link}")
+
+print("Скачиваем ISO на высокой скорости...")
+with session.get(dl_link, headers=headers, stream=True) as r:
+    r.raise_for_status()
+    with open("game.iso", "wb") as f:
+        for chunk in r.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+print("Скачивание завершено успешно!")
+'
+          echo "=== Проверяем размер скачанного ISO ==="
           ls -lh game.iso
           
           echo "=== Распаковываем ISO через 7z ==="
@@ -66,7 +100,7 @@ jobs:
             
             wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
           else
-            echo "ОШИБКА: .exe файл игры не найден!"
+            echo "ОШИБКА: .exe файл игры не найден внутри ISO!"
             ls -R game_files
             exit 1
           fi

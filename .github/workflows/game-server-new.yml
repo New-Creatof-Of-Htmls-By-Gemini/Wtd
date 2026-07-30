@@ -55,18 +55,16 @@ jobs:
           wineboot -u
           sleep 3
           
-          echo "=== Пробуем прямое извлечение через innoextract ==="
+          echo "=== Распаковка инсталлятора через innoextract ==="
           innoextract -d game_files setup.exe || true
           
-          # Если innoextract не сработал, запускаем тихую установку Wine
-          if [ ! -f $(find game_files -iname "*WhatTheDub*.exe" | head -n 1) ]; then
-            echo "Используем автоматическую тихую установку через Wine..."
-            wine setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="C:\game" || true
-            sleep 20
-          fi
+          # Глубокий рекурсивный поиск исполняемого файла игры по всем подпапкам (включая app/)
+          MAIN_EXE=$(find game_files -type f -iname "*WhatTheDub*.exe" ! -iname "*setup*" ! -iname "*unins*" | head -n 1)
           
-          # Автоматический поиск исполняемого файла игры (в game_files или в диске C:)
-          MAIN_EXE=$(find game_files $HOME/.wine_prefix/drive_c/ -iname "*WhatTheDub*.exe" ! -iname "*setup*" ! -iname "*unins*" | head -n 1)
+          # Если не нашли в game_files, ищем абсолютно везде в домашней директории
+          if [ -z "$MAIN_EXE" ]; then
+            MAIN_EXE=$(find $HOME -type f -iname "*WhatTheDub*.exe" ! -iname "*setup*" ! -iname "*unins*" | head -n 1)
+          fi
           
           if [ -n "$MAIN_EXE" ]; then
             echo "АВТО-ЗАПУСК ИГРЫ: $MAIN_EXE"
@@ -76,7 +74,7 @@ jobs:
             
             wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
           else
-            echo "ОШИБКА: Игра не найдена после автоматической установки!"
+            echo "ОШИБКА: Исполняемый файл игры не найден!"
             exit 1
           fi
           
@@ -108,6 +106,6 @@ jobs:
       
       - name: Keep server running
         run: |
-          echo "Сервер работает, игра должна зайти в главное меню!"
+          echo "Сервер работает, заходи по ссылке ngrok!"
           sleep 36000
           

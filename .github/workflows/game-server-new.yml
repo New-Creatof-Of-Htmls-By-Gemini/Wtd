@@ -28,44 +28,40 @@ jobs:
       - name: Fast Download ISO via Python
         run: |
           mkdir -p game_files
-          
-          python3 -c '
-import requests
-from bs4 import BeautifulSoup
-import re
-import sys
+          python3 - << 'EOF'
+          import requests
+          from bs4 import BeautifulSoup
 
-headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-page_url = "https://wdfiles.ru/NJjs"
+          headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+          page_url = "https://wdfiles.ru/NJjs"
 
-session = requests.Session()
-res = session.get(page_url, headers=headers)
-soup = BeautifulSoup(res.text, "html.parser")
+          session = requests.Session()
+          res = session.get(page_url, headers=headers)
+          soup = BeautifulSoup(res.text, "html.parser")
 
-# Ищем кнопку или ссылку скачивания на странице
-dl_link = None
-for a in soup.find_all("a", href=True):
-    if "/d/" in a["href"] or "download" in a["href"] or ".iso" in a["href"]:
-        dl_link = a["href"]
-        break
+          dl_link = None
+          for a in soup.find_all("a", href=True):
+              if "/d/" in a["href"] or "download" in a["href"] or ".iso" in a["href"]:
+                  dl_link = a["href"]
+                  break
 
-if not dl_link:
-    # Запасной прямой роут
-    dl_link = "https://wdfiles.ru/d/NJjs"
-elif not dl_link.startswith("http"):
-    dl_link = "https://wdfiles.ru" + dl_link
+          if not dl_link:
+              dl_link = "https://wdfiles.ru/d/NJjs"
+          elif not dl_link.startswith("http"):
+              dl_link = "https://wdfiles.ru" + dl_link
 
-print(f"Прямая ссылка найдена: {dl_link}")
+          print(f"Прямая ссылка найдена: {dl_link}")
 
-print("Скачиваем ISO на высокой скорости...")
-with session.get(dl_link, headers=headers, stream=True) as r:
-    r.raise_for_status()
-    with open("game.iso", "wb") as f:
-        for chunk in r.iter_content(chunk_size=8192):
-            f.write(chunk)
+          print("Скачиваем ISO на высокой скорости...")
+          with session.get(dl_link, headers=headers, stream=True) as r:
+              r.raise_for_status()
+              with open("game.iso", "wb") as f:
+                  for chunk in r.iter_content(chunk_size=8192):
+                      f.write(chunk)
 
-print("Скачивание завершено успешно!")
-'
+          print("Скачивание завершено успешно!")
+          EOF
+
           echo "=== Проверяем размер скачанного ISO ==="
           ls -lh game.iso
           

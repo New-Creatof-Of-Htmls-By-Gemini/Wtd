@@ -16,7 +16,8 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1-mesa-dri libgl1-mesa-glx
+          # Исправлен libgl1-mesa-glx на libgl1 и libglx-mesa0
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri
       
       - name: Install official Ngrok
         run: |
@@ -46,13 +47,12 @@ jobs:
           pulseaudio --start || true
           sleep 3
       
-      - name: Run What the Dub (Software Rendering Fix)
+      - name: Run What the Dub
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
           export WINEDLLOVERRIDES="mscoree,mshtml=b"
-          # Принудительный программный рендеринг для Unity в headless X11
           export LIBGL_ALWAYS_SOFTWARE=1
           
           rm -rf $WINEPREFIX
@@ -66,7 +66,6 @@ jobs:
             GAME_DIR=$(dirname "$MAIN_EXE")
             EXE_NAME=$(basename "$MAIN_EXE")
             cd "$GAME_DIR"
-            # Флаг -force-d3d11 или -force-opengl заставляет Unity принудительно рисовать кадры
             wine64 "$EXE_NAME" -force-opengl &
           else
             echo "Файл игры не найден!"
@@ -74,13 +73,13 @@ jobs:
           fi
           sleep 10
       
-      - name: Start VNC and Websockify (Direct HTML Redirect)
+      - name: Start VNC and Websockify
         run: |
           export DISPLAY=:99
           x11vnc -display :99 -forever -nopw -listen localhost -rfbport 5900 &
           sleep 2
           
-          # Перенаправляем главную страницу websockify сразу на vnc_lite.html
+          # Настраиваем noVNC так, чтобы при открытии ссылки сразу запускался стрим
           cp /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html
           websockify --web=/usr/share/novnc/ 6080 localhost:5900 &
           sleep 2
@@ -96,7 +95,7 @@ jobs:
           ngrok config add-authtoken $NGROK_AUTHTOKEN
           ngrok http 6080 --log=stdout > /tmp/ngrok.log 2>&1 &
           sleep 5
-          echo "=== ОТКРЫВАЙ ЭТУ ССЫЛКУ В БРАУЗЕРЕ ===" 
+          echo "=== ССЫЛКА НА ИГРУ (ОТКРЫВАЙ В БРАУЗЕРЕ) ===" 
           grep -o 'https://[^"]*ngrok-free.dev' /tmp/ngrok.log || grep -o 'https://[^"]*ngrok-free.app' /tmp/ngrok.log || cat /tmp/ngrok.log
       
       - name: Keep server running

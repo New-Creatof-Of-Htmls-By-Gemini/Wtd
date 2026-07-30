@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq innoextract
       
       - name: Install official Ngrok
         run: |
@@ -45,7 +45,44 @@ jobs:
           pulseaudio --start || true
           sleep 3
 
-      - name: Start VNC and Websockify First
+      - name: Auto-Extract and Auto-Run Game
+        run: |
+          export DISPLAY=:99
+          export WINEPREFIX=$HOME/.wine_prefix
+          export WINEARCH=win64
+          export WINEDLLOVERRIDES="mscoree,mshtml=b"
+          
+          wineboot -u
+          sleep 3
+          
+          echo "=== Пробуем прямое извлечение через innoextract ==="
+          innoextract -d game_files setup.exe || true
+          
+          # Если innoextract не сработал, запускаем тихую установку Wine
+          if [ ! -f $(find game_files -iname "*WhatTheDub*.exe" | head -n 1) ]; then
+            echo "Используем автоматическую тихую установку через Wine..."
+            wine setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="C:\game" || true
+            sleep 20
+          fi
+          
+          # Автоматический поиск исполняемого файла игры (в game_files или в диске C:)
+          MAIN_EXE=$(find game_files $HOME/.wine_prefix/drive_c/ -iname "*WhatTheDub*.exe" ! -iname "*setup*" ! -iname "*unins*" | head -n 1)
+          
+          if [ -n "$MAIN_EXE" ]; then
+            echo "АВТО-ЗАПУСК ИГРЫ: $MAIN_EXE"
+            GAME_DIR=$(dirname "$MAIN_EXE")
+            EXE_NAME=$(basename "$MAIN_EXE")
+            cd "$GAME_DIR"
+            
+            wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
+          else
+            echo "ОШИБКА: Игра не найдена после автоматической установки!"
+            exit 1
+          fi
+          
+          sleep 10
+
+      - name: Start VNC and Websockify
         run: |
           export DISPLAY=:99
           x11vnc -display :99 -forever -nopw -listen localhost -rfbport 5900 &
@@ -66,25 +103,11 @@ jobs:
           ngrok config add-authtoken $NGROK_AUTHTOKEN
           ngrok http 6080 --log=stdout > /tmp/ngrok.log 2>&1 &
           sleep 5
-          echo "=== ССЫЛКА НА ИГРУ / УСТАНОВКУ (ОТКРЫВАЙ В БРАУЗЕРЕ) ===" 
+          echo "=== ССЫЛКА НА ИГРУ (ОТКРЫВАЙ В БРАУЗЕРЕ) ===" 
           grep -o 'https://[^"]*ngrok-free.dev' /tmp/ngrok.log || grep -o 'https://[^"]*ngrok-free.app' /tmp/ngrok.log || cat /tmp/ngrok.log
-      
-      - name: Run Installer on Desktop
-        run: |
-          export DISPLAY=:99
-          export WINEPREFIX=$HOME/.wine_prefix
-          export WINEARCH=win64
-          export WINEDLLOVERRIDES="mscoree,mshtml=b"
-          
-          wineboot -u
-          sleep 3
-          
-          echo "Запускаем инсталлятор на рабочем столе..."
-          wine setup.exe &
-          sleep 5
       
       - name: Keep server running
         run: |
-          echo "Server running... Переходи по ссылке Ngrok и прокликивай установщик!"
+          echo "Сервер работает, игра должна зайти в главное меню!"
           sleep 36000
           

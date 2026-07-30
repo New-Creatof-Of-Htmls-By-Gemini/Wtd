@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq winetricks mesa-utils
 
       - name: Install official Ngrok
         run: |
@@ -29,10 +29,7 @@ jobs:
         run: |
           mkdir -p game_files
           
-          # Получаем прямую ссылку на PartyBox.zip из релиза E
           ZIP_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | jq -r '.assets[] | select(.name | test("PartyBox\\.zip$"; "i")) | .browser_download_url' | head -n 1)
-          
-          echo "Ссылка на ZIP: $ZIP_URL"
           
           if [ -n "$ZIP_URL" ] && [ "$ZIP_URL" != "null" ]; then
             curl -sSLf "$ZIP_URL" -o partybox.zip
@@ -43,31 +40,40 @@ jobs:
             exit 1
           fi
 
-      - name: Setup Display, Window Manager & Audio
+      - name: Setup Display, Audio & Mesa OpenGL
         run: |
-          Xvfb :99 -screen 0 1280x720x24 &
+          # Запускаем виртуальный дисплей с 24-битным цветом
+          Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
           export DISPLAY=:99
           fluxbox &
-          pulseaudio --start || true
+          
+          # Настройка звука (создаем виртуальный динамик)
+          pulseaudio --start --exit-idle-time=-1 || true
+          pactl load-module module-null-sink sink_name=dummy || true
+          pactl set-default-sink dummy || true
+          
           sleep 3
 
-      - name: Run PartyBox in Wine
+      - name: Run PartyBox with Mesa Software Rendering
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
+          
+          # ВКЛЮЧАЕМ Программный 3D-рендер (чтобы исчез черный экран)
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
           export WINEDLLOVERRIDES="mscoree,mshtml=b"
           
           wineboot -u
           sleep 3
           
-          # Ищем главный .exe лаунчера/инсталлятора
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
             echo "ЗАПУСК PARTYBOX: $MAIN_EXE"
             cd "$(dirname "$MAIN_EXE")"
-            wine "$(basename "$MAIN_EXE")" > /tmp/game_output.log 2>&1 &
+            wine "$(basename "$MAIN_EXE")" -force-d3d11 > /tmp/game_output.log 2>&1 &
           else
             echo "ОШИБКА: Исполняемый .exe файл не найден внутри ZIP!"
             ls -R game_files

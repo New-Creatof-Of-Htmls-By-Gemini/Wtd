@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify
       
       - name: Install official Ngrok
         run: |
@@ -29,9 +29,7 @@ jobs:
         run: |
           mkdir -p game_files
           
-          # Получаем прямую ссылку на файл из релиза E через GitHub API
           ISO_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | grep "browser_download_url" | cut -d '"' -f 4 | head -n 1)
-          
           echo "Found download URL: $ISO_URL"
           
           if [ -z "$ISO_URL" ]; then
@@ -39,10 +37,7 @@ jobs:
             exit 1
           fi
 
-          # Скачиваем ISO
           curl -sSLf "$ISO_URL" -o game_file.iso
-          
-          # Распаковываем содержимое
           7z x game_file.iso -ogame_files/ -y
           echo "=== Распакованные файлы ==="
           ls -R game_files
@@ -55,28 +50,31 @@ jobs:
           pulseaudio --start || true
           sleep 3
       
-      - name: Run What the Dub
+      - name: Run What the Dub (64-bit Wine Fix)
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
+          export WINEARCH=win64
+          export WINEDLLOVERRIDES="mscoree,mshtml=b"
+          
+          # Очищаем префикс для создания 64-битной архитектуры
           rm -rf $WINEPREFIX
           wineboot -u
           sleep 5
           
-          # Поиск исполняемого файла игры или инсталлятора
-          SETUP_EXE=$(find game_files -iname "*setup*.exe" -o -iname "*install*.exe" | head -n 1)
           MAIN_EXE=$(find game_files -iname "*WhatTheDub*.exe" ! -iname "*setup*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "Запуск файла игры: $MAIN_EXE"
-            wine "$MAIN_EXE" &
-          elif [ -n "$SETUP_EXE" ]; then
-            echo "Запуск установщика: $SETUP_EXE"
-            wine "$SETUP_EXE" /VERYSILENT /NORESTART &
+            echo "Запуск 64-битной игры: $MAIN_EXE"
+            # Переходим в папку с игрой, чтобы Unity увидел свои .dll и папки Data
+            GAME_DIR=$(dirname "$MAIN_EXE")
+            EXE_NAME=$(basename "$MAIN_EXE")
+            cd "$GAME_DIR"
+            wine64 "$EXE_NAME" &
           else
             echo "Поиск любого .exe файла..."
             ANY_EXE=$(find game_files -name "*.exe" | head -n 1)
-            wine "$ANY_EXE" &
+            wine64 "$ANY_EXE" &
           fi
           sleep 10
       

@@ -29,7 +29,7 @@ jobs:
         run: |
           mkdir -p game_files
           
-          # Автоматически получаем прямую ссылку на файл из релиза E
+          # Автоматическое получение ссылки из релиза E
           ISO_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | grep "browser_download_url" | cut -d '"' -f 4 | head -n 1)
           
           echo "Found download URL: $ISO_URL"
@@ -56,7 +56,6 @@ jobs:
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
           export WINEDLLOVERRIDES="mscoree,mshtml=b"
-          export LIBGL_ALWAYS_SOFTWARE=1
           
           rm -rf $WINEPREFIX
           wineboot -u
@@ -69,12 +68,17 @@ jobs:
             GAME_DIR=$(dirname "$MAIN_EXE")
             EXE_NAME=$(basename "$MAIN_EXE")
             cd "$GAME_DIR"
-            wine64 "$EXE_NAME" -force-opengl &
+            
+            # Запуск в окне 1280x720 с перенаправлением логов
+            wine64 "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
           else
             echo "Файл игры не найден!"
             exit 1
           fi
-          sleep 10
+          
+          sleep 12
+          echo "=== LOGS GAME / WINE ==="
+          cat /tmp/game_output.log | tail -n 30 || true
       
       - name: Start VNC and Websockify
         run: |
@@ -82,7 +86,6 @@ jobs:
           x11vnc -display :99 -forever -nopw -listen localhost -rfbport 5900 &
           sleep 2
           
-          # Использование sudo гарантирует отсутствие ошибки Permission Denied
           sudo cp /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html
           websockify --web=/usr/share/novnc/ 6080 localhost:5900 &
           sleep 2

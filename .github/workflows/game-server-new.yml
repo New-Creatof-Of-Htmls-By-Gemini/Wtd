@@ -12,11 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: Enable i386 architecture and Install dependencies
+      - name: Enable i386 architecture & Install dependencies
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio alsa-utils
+          sudo apt-get install -y wine wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio alsa-utils novnc websockify
       
       - name: Download release asset
         run: |
@@ -27,27 +27,27 @@ jobs:
         run: |
           Xvfb :99 -screen 0 1280x720x24 &
           export DISPLAY=:99
-          pulseaudio --start
+          pulseaudio --start || true
           sleep 2
       
-      - name: Install Wine prefix
+      - name: Run What the Dub (Fixed Wine Prefix)
         run: |
           export DISPLAY=:99
-          export WINEPREFIX=/tmp/wine_prefix
+          export WINEPREFIX=$HOME/.wine_prefix
+          rm -rf $WINEPREFIX
           wineboot -i
           sleep 5
-      
-      - name: Run What the Dub
-        run: |
-          export DISPLAY=:99
-          export WINEPREFIX=/tmp/wine_prefix
           wine game.exe &
           sleep 10
       
-      - name: Start VNC server
+      - name: Start VNC and Websockify
         run: |
           export DISPLAY=:99
+          # Запуск VNC сервера на порту 5900
           x11vnc -display :99 -forever -nopw -listen localhost -rfbport 5900 &
+          sleep 2
+          # Мост из TCP VNC (5900) в WebSockets (6080) для браузера
+          websockify --web=/usr/share/novnc/ 6080 localhost:5900 &
           sleep 2
       
       - name: Setup ngrok tunnel
@@ -55,14 +55,14 @@ jobs:
           curl -s https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip -o ngrok.zip
           unzip -q ngrok.zip
           chmod +x ngrok
-          ./ngrok tcp localhost:5900 > /tmp/ngrok.log 2>&1 &
+          # Пробрасываем вебсокет порт 6080
+          ./ngrok http 6080 > /tmp/ngrok.log 2>&1 &
           sleep 5
-          echo "=== NGROK TUNNEL ===" 
-          cat /tmp/ngrok.log || echo "Checking ngrok status..."
-          ps aux | grep ngrok || echo "ngrok not running yet"
+          echo "=== NGROK TUNNEL URL ===" 
+          cat /tmp/ngrok.log | grep -o 'https://[^"]*' || cat /tmp/ngrok.log
       
       - name: Keep server running
         run: |
-          echo "Server running... Check ngrok URL in logs above"
+          echo "Server running... Use ngrok URL in your HTML client"
           sleep 36000
           

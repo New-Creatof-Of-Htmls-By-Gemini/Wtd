@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq
       
       - name: Install official Ngrok
         run: |
@@ -29,17 +29,23 @@ jobs:
         run: |
           mkdir -p game_files
           
-          # Получаем прямую ссылку на .exe из релиза E
-          EXE_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | grep "browser_download_url" | cut -d '"' -f 4 | head -n 1)
+          # Надежный поиск ссылки на .exe через jq
+          EXE_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | jq -r '.assets[] | select(.name | test("\\.(exe|iso|zip|7z)$"; "i")) | .browser_download_url' | head -n 1)
           
           echo "Found download URL: $EXE_URL"
           
-          if [ -z "$EXE_URL" ]; then
-            echo "ОШИБКА: Не удалось получить ссылку из релиза E!"
-            exit 1
+          # Если API все еще пустой, пробуем прямую ссылку на файл релиза
+          if [ -z "$EXE_URL" ] || [ "$EXE_URL" = "null" ]; then
+            echo "API не вернул ссылку, пробуем скачивание напрямую из релиза E..."
+            EXE_URL="https://github.com/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/download/E/What_the_Dub_rus_v1.01_TDoT.exe"
           fi
 
-          curl -sSLf "$EXE_URL" -o setup.exe
+          curl -sSLf "$EXE_URL" -o setup.exe || curl -sSLf "https://github.com/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/download/E/setup.exe" -o setup.exe
+          
+          if [ ! -f setup.exe ]; then
+            echo "ОШИБКА: Файл не удалось скачать!"
+            exit 1
+          fi
 
       - name: Setup Display, Window Manager & Audio
         run: |
@@ -61,13 +67,10 @@ jobs:
           sleep 5
           
           echo "Запускаем тихую установку..."
-          # Запускаем установку в папку C:\game
-          wine setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="C:\game" || wine setup.exe /S /D=C:\game
+          wine setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="C:\game" || wine setup.exe /S /D=C:\game || true
           
-          # Ждем завершения установки
           sleep 15
           
-          # Ищем установленный .exe внутри виртуального диска Wine (C:)
           MAIN_EXE=$(find $HOME/.wine_prefix/drive_c/ -iname "*WhatTheDub*.exe" ! -iname "*setup*" ! -iname "*unins*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
@@ -78,7 +81,7 @@ jobs:
             
             wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
           else
-            echo "ОШИБКА: Игра не установилась!"
+            echo "ОШИБКА: Игра не установилась в C:\game!"
             find $HOME/.wine_prefix/drive_c/
             exit 1
           fi
@@ -115,4 +118,5 @@ jobs:
         run: |
           echo "Server running..."
           sleep 36000
+          
           

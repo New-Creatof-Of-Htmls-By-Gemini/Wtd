@@ -69,8 +69,8 @@ jobs:
             EXE_NAME=$(basename "$MAIN_EXE")
             cd "$GAME_DIR"
             
-            # Запуск в окне 1280x720 с перенаправлением логов
-            wine64 "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
+            # Заменяем wine64 на wine, добавляем -force-d3d11
+            wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
           else
             echo "Файл игры не найден!"
             exit 1

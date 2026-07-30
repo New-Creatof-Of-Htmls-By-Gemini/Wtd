@@ -55,26 +55,25 @@ jobs:
           wineboot -u
           sleep 3
           
-          echo "=== Распаковка инсталлятора через innoextract ==="
+          echo "=== Распаковка через innoextract ==="
           innoextract -d game_files setup.exe || true
           
-          # Глубокий рекурсивный поиск исполняемого файла игры по всем подпапкам (включая app/)
-          MAIN_EXE=$(find game_files -type f -iname "*WhatTheDub*.exe" ! -iname "*setup*" ! -iname "*unins*" | head -n 1)
+          echo "=== СПИСОК ВСЕХ НАЙДЕННЫХ .EXE ФАЙЛОВ ==="
+          find game_files -type f -iname "*.exe"
           
-          # Если не нашли в game_files, ищем абсолютно везде в домашней директории
-          if [ -z "$MAIN_EXE" ]; then
-            MAIN_EXE=$(find $HOME -type f -iname "*WhatTheDub*.exe" ! -iname "*setup*" ! -iname "*unins*" | head -n 1)
-          fi
+          # Ищем любой .exe файл, кроме системных утилит и краш-хэндлеров
+          MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*setup*" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "АВТО-ЗАПУСК ИГРЫ: $MAIN_EXE"
+            echo "НАЙДЕН ИСПОЛНЯЕМЫЙ ФАЙЛ: $MAIN_EXE"
             GAME_DIR=$(dirname "$MAIN_EXE")
             EXE_NAME=$(basename "$MAIN_EXE")
             cd "$GAME_DIR"
             
             wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
           else
-            echo "ОШИБКА: Исполняемый файл игры не найден!"
+            echo "ОШИБКА: Ни один подходящий .exe не найден!"
+            ls -R game_files
             exit 1
           fi
           
@@ -106,6 +105,6 @@ jobs:
       
       - name: Keep server running
         run: |
-          echo "Сервер работает, заходи по ссылке ngrok!"
+          echo "Сервер работает!"
           sleep 36000
           

@@ -25,12 +25,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Download and Extract Game
+      - name: Download and Extract ISO Game Image
         run: |
           mkdir -p game_files
-          curl -L "https://github.com/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/download/E/WhatTheDub-RU_v2.2.0.4-TDoT-2.3-Setup.exe" -o setup.exe
-          # Распаковываем установочный exe напрямую, чтобы не просить инсталлятор кликать "Далее"
-          7z x setup.exe -ogame_files/ || 7z e setup.exe -ogame_files/ -y
+          # Скачиваем прямо из релиза ISO образ
+          curl -sSLf "https://github.com/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/download/E/WhatTheDub-RU_v2.2.0.4-TDoT-2.3.iso" -o game.iso
+          
+          # Распаковываем ISO образ прямо в папку
+          7z x game.iso -ogame_files/ -y
+          echo "=== Распакованные файлы ==="
           ls -R game_files
 
       - name: Setup Display, Window Manager & Audio
@@ -48,15 +51,20 @@ jobs:
           wineboot -u
           sleep 5
           
-          # Находим .exe внутри распакованных файлов и запускаем
-          GAME_EXE=$(find game_files -name "*.exe" | head -n 1)
-          echo "Found EXE: $GAME_EXE"
+          # Ищем исполняемый файл игры или инсталлятор внутри ISO
+          SETUP_EXE=$(find game_files -iname "*setup*.exe" -o -iname "*install*.exe" | head -n 1)
+          MAIN_EXE=$(find game_files -iname "*WhatTheDub*.exe" ! -iname "*setup*" | head -n 1)
           
-          if [ -f "$GAME_EXE" ]; then
-            wine "$GAME_EXE" &
+          if [ -n "$MAIN_EXE" ]; then
+            echo "Запускаем исполняемый файл игры: $MAIN_EXE"
+            wine "$MAIN_EXE" &
+          elif [ -n "$SETUP_EXE" ]; then
+            echo "Запускаем установщик: $SETUP_EXE"
+            wine "$SETUP_EXE" /VERYSILENT /NORESTART &
           else
-            echo "Direct EXE not found, running setup via wine..."
-            wine setup.exe /VERYSILENT /NORESTART &
+            echo "Ищем любой .exe файл..."
+            ANY_EXE=$(find game_files -name "*.exe" | head -n 1)
+            wine "$ANY_EXE" &
           fi
           sleep 10
       

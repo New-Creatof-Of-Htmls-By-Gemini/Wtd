@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio alsa-utils novnc websockify
+          sudo apt-get install -y wine wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify
       
       - name: Install official Ngrok
         run: |
@@ -25,35 +25,46 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Download release asset
+      - name: Download and Extract Game
         run: |
-          curl -L "https://github.com/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/download/E/WhatTheDub-RU_v2.2.0.4-TDoT-2.3-Setup.exe" -o game.exe
-          ls -lh game.exe
-      
-      - name: Setup X11 display & Audio
+          mkdir -p game_files
+          curl -L "https://github.com/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/download/E/WhatTheDub-RU_v2.2.0.4-TDoT-2.3-Setup.exe" -o setup.exe
+          # Распаковываем установочный exe напрямую, чтобы не просить инсталлятор кликать "Далее"
+          7z x setup.exe -ogame_files/ || 7z e setup.exe -ogame_files/ -y
+          ls -R game_files
+
+      - name: Setup Display, Window Manager & Audio
         run: |
           Xvfb :99 -screen 0 1280x720x24 &
           export DISPLAY=:99
+          fluxbox &
           pulseaudio --start || true
-          sleep 2
+          sleep 3
       
-      - name: Run What the Dub (Fixed Wine Prefix)
+      - name: Run What the Dub
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
-          rm -rf $WINEPREFIX
-          wineboot -i
+          wineboot -u
           sleep 5
-          wine game.exe &
+          
+          # Находим .exe внутри распакованных файлов и запускаем
+          GAME_EXE=$(find game_files -name "*.exe" | head -n 1)
+          echo "Found EXE: $GAME_EXE"
+          
+          if [ -f "$GAME_EXE" ]; then
+            wine "$GAME_EXE" &
+          else
+            echo "Direct EXE not found, running setup via wine..."
+            wine setup.exe /VERYSILENT /NORESTART &
+          fi
           sleep 10
       
       - name: Start VNC and Websockify
         run: |
           export DISPLAY=:99
-          # Запуск VNC
           x11vnc -display :99 -forever -nopw -listen localhost -rfbport 5900 &
           sleep 2
-          # Мост из VNC (5900) в WebSockets (6080) для HTML-клиента
           websockify --web=/usr/share/novnc/ 6080 localhost:5900 &
           sleep 2
       
@@ -62,17 +73,17 @@ jobs:
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
         run: |
           if [ -z "$NGROK_AUTHTOKEN" ]; then
-            echo "ОШИБКА: Секрет NGROK_AUTHTOKEN не задан в GitHub Secrets!"
+            echo "ОШИБКА: Секрет NGROK_AUTHTOKEN не задан!"
             exit 1
           fi
           ngrok config add-authtoken $NGROK_AUTHTOKEN
           ngrok http 6080 --log=stdout > /tmp/ngrok.log 2>&1 &
           sleep 5
           echo "=== NGROK TUNNEL URL ===" 
-          grep -o 'https://[^"]*ngrok-free.app' /tmp/ngrok.log || grep -o 'https://[^"]*ngrok.io' /tmp/ngrok.log || cat /tmp/ngrok.log
+          grep -o 'https://[^"]*ngrok-free.dev' /tmp/ngrok.log || grep -o 'https://[^"]*ngrok-free.app' /tmp/ngrok.log || cat /tmp/ngrok.log
       
       - name: Keep server running
         run: |
-          echo "Server running... Use ngrok URL in your HTML client"
+          echo "Server running..."
           sleep 36000
           

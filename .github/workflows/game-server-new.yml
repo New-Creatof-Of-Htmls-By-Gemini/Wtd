@@ -25,11 +25,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Download and Extract EXE Game Installer
+      - name: Download Game Installer
         run: |
           mkdir -p game_files
           
-          # Находим прямую ссылку на загруженный .exe из релиза E
+          # Получаем прямую ссылку на .exe из релиза E
           EXE_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | grep "browser_download_url" | cut -d '"' -f 4 | head -n 1)
           
           echo "Found download URL: $EXE_URL"
@@ -40,12 +40,6 @@ jobs:
           fi
 
           curl -sSLf "$EXE_URL" -o setup.exe
-          
-          # Распаковываем файлы из установочника напрямую в game_files/
-          7z x setup.exe -ogame_files/ -y || 7z e setup.exe -ogame_files/ -y
-          
-          echo "=== Распакованные файлы ==="
-          ls -R game_files
 
       - name: Setup Display, Window Manager & Audio
         run: |
@@ -55,7 +49,7 @@ jobs:
           pulseaudio --start || true
           sleep 3
       
-      - name: Run What the Dub
+      - name: Install and Run What the Dub
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
@@ -66,19 +60,27 @@ jobs:
           wineboot -u
           sleep 5
           
-          # Ищем распакованный главный .exe файл игры
-          MAIN_EXE=$(find game_files -iname "*WhatTheDub*.exe" ! -iname "*setup*" ! -iname "*install*" | head -n 1)
+          echo "Запускаем тихую установку..."
+          # Запускаем установку в папку C:\game
+          wine setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="C:\game" || wine setup.exe /S /D=C:\game
+          
+          # Ждем завершения установки
+          sleep 15
+          
+          # Ищем установленный .exe внутри виртуального диска Wine (C:)
+          MAIN_EXE=$(find $HOME/.wine_prefix/drive_c/ -iname "*WhatTheDub*.exe" ! -iname "*setup*" ! -iname "*unins*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "Запуск игры: $MAIN_EXE"
+            echo "Найден файл игры: $MAIN_EXE"
             GAME_DIR=$(dirname "$MAIN_EXE")
             EXE_NAME=$(basename "$MAIN_EXE")
             cd "$GAME_DIR"
             
             wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -windowed > /tmp/game_output.log 2>&1 &
           else
-            echo "Главный exe не найден, пробуем запустить сам установщик через Wine..."
-            wine setup.exe /VERYSILENT /NORESTART &
+            echo "ОШИБКА: Игра не установилась!"
+            find $HOME/.wine_prefix/drive_c/
+            exit 1
           fi
           
           sleep 12

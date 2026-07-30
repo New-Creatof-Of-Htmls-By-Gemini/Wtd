@@ -1,122 +1,145 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>What The Dub - Stream & Controls</title>
+    <title>What The Dub - Remote Play</title>
     <style>
         body {
             background-color: #121212;
             color: #ffffff;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: flex-start;
             min-height: 100vh;
         }
-        h1 { margin: 10px 0; font-size: 1.5rem; }
+        h1 { margin: 15px 0 5px 0; font-size: 1.4rem; }
+        .connection-box {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        input {
+            padding: 8px 12px;
+            border-radius: 5px;
+            border: 1px solid #444;
+            background: #222;
+            color: #fff;
+            width: 280px;
+        }
+        button.connect-btn {
+            padding: 8px 15px;
+            border-radius: 5px;
+            border: none;
+            background: #28a745;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
         #screen-container {
             width: 100%;
             max-width: 960px;
             height: 540px;
             background: #000;
             border: 2px solid #333;
-            position: relative;
-        }
-        #noVNC_canvas {
-            width: 100% !important;
-            height: 100% !important;
+            border-radius: 8px;
+            overflow: hidden;
         }
         .controls {
             display: grid;
-            grid-template-columns: repeat(3, 70px);
+            grid-template-columns: repeat(3, 80px);
             gap: 10px;
-            margin-top: 15px;
+            margin: 15px 0;
         }
         .v-btn {
-            background: #1e1e1e;
+            background: #2a2a2a;
             color: white;
-            border: 1px solid #555;
-            padding: 15px;
-            font-size: 1rem;
+            border: 1px solid #444;
+            padding: 15px 5px;
+            font-size: 0.9rem;
+            font-weight: bold;
             cursor: pointer;
             border-radius: 8px;
             text-align: center;
             user-select: none;
+            touch-action: manipulation;
         }
-        .v-btn:active { background: #333; }
+        .v-btn:active { background: #444; transform: scale(0.98); }
+        .v-btn.danger { background: #d9534f; border-color: #d43f3a; }
         .wide { grid-column: span 3; }
     </style>
 </head>
 <body>
 
-    <h1>What The Dub - Remote Play</h1>
+    <h1>What The Dub Remote</h1>
     
-    <!-- Окно стрима игры -->
+    <div class="connection-box">
+        <input type="text" id="ngrokUrl" placeholder="Вставь ngrok URL (без https://)">
+        <button class="connect-btn" onclick="connectVNC()">Подключиться</button>
+    </div>
+
+    <!-- Экран трансляции -->
     <div id="screen-container">
         <div id="noVNC_container" style="width:100%; height:100%;"></div>
     </div>
 
-    <!-- Виртуальная клавиатура для управления в игре -->
+    <!-- Клавиатура с кнопкой Esc -->
     <div class="controls">
-        <div></div>
+        <div class="v-btn danger" ontouchstart="sendKey('Escape')" onmousedown="sendKey('Escape')">🔴 ESC</div>
         <div class="v-btn" ontouchstart="sendKey('Up')" onmousedown="sendKey('Up')">⬆️</div>
-        <div></div>
-        <div class="v-btn" ontouchstart="sendKey('Left')" onmousedown="sendKey('Left')">⬅️</div>
         <div class="v-btn" ontouchstart="sendKey('Return')" onmousedown="sendKey('Return')">🟢 Enter</div>
-        <div class="v-btn" ontouchstart="sendKey('Right')" onmousedown="sendKey('Right')">➡️</div>
-        <div></div>
+        
+        <div class="v-btn" ontouchstart="sendKey('Left')" onmousedown="sendKey('Left')">⬅️</div>
         <div class="v-btn" ontouchstart="sendKey('Down')" onmousedown="sendKey('Down')">⬇️</div>
-        <div></div>
+        <div class="v-btn" ontouchstart="sendKey('Right')" onmousedown="sendKey('Right')">➡️</div>
+        
         <div class="v-btn wide" ontouchstart="sendKey('Space')" onmousedown="sendKey('Space')">Пробел (Space)</div>
     </div>
 
-    <!-- Подключаем noVNC клиент -->
     <script type="module">
         import RFB from 'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.4.0/lib/rfb.js';
 
         let rfb;
-        // Укажи хост и порт от ngrok (например, если ngrok дал tcp://0.tcp.ngrok.io:12345, 
-        // то для вебсокетов нужен адрес через wss:// или ws://, либо используй ngrok http туннель)
-        const host = prompt("Введите хост ngrok (например: 0.tcp.ngrok.io):", "localhost");
-        const port = prompt("Введите порт ngrok:", "5900");
 
-        function connectedToServer(e) {
-            console.log("Connected to VNC server");
-        }
+        window.connectVNC = function() {
+            let rawUrl = document.getElementById('ngrokUrl').value.trim();
+            if (!rawUrl) return alert("Введите URL из логов GitHub Actions!");
 
-        function disconnectedFromServer(e) {
-            console.log("Disconnected", e);
-        }
+            // Форматируем URL для WebSocket
+            rawUrl = rawUrl.replace('https://', '').replace('http://', '');
+            const wsUrl = `wss://${rawUrl}/websockify`;
 
-        window.onload = function() {
-            // Инициализация noVNC (обрати внимание, что для raw TCP ngrok нужен специальный tcp-websocket прокси,
-            // либо лучше запускать ngrok http наносекундный веб-сервер, но для VNC используют wss)
-            const url = `ws://${host}:${port}`;
-            rfb = new RFB(document.getElementById('noVNC_container'), url, {
-                credentials: { password: '' }
-            });
-            rfb.addEventListener("connect", connectedToServer);
-            rfb.addEventListener("disconnect", disconnectedFromServer);
+            if (rfb) rfb.disconnect();
+
+            rfb = new RFB(document.getElementById('noVNC_container'), wsUrl);
             rfb.scaleWithWindow = true;
             rfb.resizeSession = true;
+
+            rfb.addEventListener("connect", () => console.log("Успешно подключено к игре!"));
+            rfb.addEventListener("disconnect", (e) => console.log("Отключено:", e));
         };
 
         window.sendKey = function(keysymName) {
             if (!rfb) return;
-            // Эмуляция нажатия клавиш клавиатуры
-            let keysym = 0;
-            if (keysymName === 'Return') keysym = 0xFF0D;
-            if (keysymName === 'Space') keysym = 0x0020;
-            if (keysymName === 'Up') keysym = 0xFF52;
-            if (keysymName === 'Down') keysym = 0xFF54;
-            if (keysymName === 'Left') keysym = 0xFF51;
-            if (keysymName === 'Right') keysym = 0xFF53;
+            
+            // Коды клавиш X11 Keysym
+            const keyMap = {
+                'Escape': 0xFF1B,
+                'Return': 0xFF0D,
+                'Space': 0x0020,
+                'Up': 0xFF52,
+                'Down': 0xFF54,
+                'Left': 0xFF51,
+                'Right': 0xFF53
+            };
 
-            rfb.sendKey(keysym, true);
-            setTimeout(() => rfb.sendKey(keysym, false), 100);
+            const keysym = keyMap[keysymName];
+            if (keysym) {
+                rfb.sendKey(keysym, true);
+                setTimeout(() => rfb.sendKey(keysym, false), 100);
+            }
         };
     </script>
 </body>

@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1-mesa-dri libgl1-mesa-glx
       
       - name: Install official Ngrok
         run: |
@@ -28,19 +28,15 @@ jobs:
       - name: Download and Extract ISO Game Image
         run: |
           mkdir -p game_files
-          
           ISO_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | grep "browser_download_url" | cut -d '"' -f 4 | head -n 1)
-          echo "Found download URL: $ISO_URL"
           
           if [ -z "$ISO_URL" ]; then
-            echo "ОШИБКА: Не удалось получить ссылку на файл из релиза E!"
+            echo "ОШИБКА: Не удалось получить ссылку из релиза E!"
             exit 1
           fi
 
           curl -sSLf "$ISO_URL" -o game_file.iso
           7z x game_file.iso -ogame_files/ -y
-          echo "=== Распакованные файлы ==="
-          ls -R game_files
 
       - name: Setup Display, Window Manager & Audio
         run: |
@@ -50,14 +46,15 @@ jobs:
           pulseaudio --start || true
           sleep 3
       
-      - name: Run What the Dub (64-bit Wine Fix)
+      - name: Run What the Dub (Software Rendering Fix)
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
           export WINEDLLOVERRIDES="mscoree,mshtml=b"
+          # Принудительный программный рендеринг для Unity в headless X11
+          export LIBGL_ALWAYS_SOFTWARE=1
           
-          # Очищаем префикс для создания 64-битной архитектуры
           rm -rf $WINEPREFIX
           wineboot -u
           sleep 5
@@ -65,24 +62,26 @@ jobs:
           MAIN_EXE=$(find game_files -iname "*WhatTheDub*.exe" ! -iname "*setup*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "Запуск 64-битной игры: $MAIN_EXE"
-            # Переходим в папку с игрой, чтобы Unity увидел свои .dll и папки Data
+            echo "Запуск игры: $MAIN_EXE"
             GAME_DIR=$(dirname "$MAIN_EXE")
             EXE_NAME=$(basename "$MAIN_EXE")
             cd "$GAME_DIR"
-            wine64 "$EXE_NAME" &
+            # Флаг -force-d3d11 или -force-opengl заставляет Unity принудительно рисовать кадры
+            wine64 "$EXE_NAME" -force-opengl &
           else
-            echo "Поиск любого .exe файла..."
-            ANY_EXE=$(find game_files -name "*.exe" | head -n 1)
-            wine64 "$ANY_EXE" &
+            echo "Файл игры не найден!"
+            exit 1
           fi
           sleep 10
       
-      - name: Start VNC and Websockify
+      - name: Start VNC and Websockify (Direct HTML Redirect)
         run: |
           export DISPLAY=:99
           x11vnc -display :99 -forever -nopw -listen localhost -rfbport 5900 &
           sleep 2
+          
+          # Перенаправляем главную страницу websockify сразу на vnc_lite.html
+          cp /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html
           websockify --web=/usr/share/novnc/ 6080 localhost:5900 &
           sleep 2
       
@@ -91,13 +90,13 @@ jobs:
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
         run: |
           if [ -z "$NGROK_AUTHTOKEN" ]; then
-            echo "ОШИБКА: Секрет NGROK_AUTHTOKEN не задан в Secrets репозитория!"
+            echo "ОШИБКА: Секрет NGROK_AUTHTOKEN не задан!"
             exit 1
           fi
           ngrok config add-authtoken $NGROK_AUTHTOKEN
           ngrok http 6080 --log=stdout > /tmp/ngrok.log 2>&1 &
           sleep 5
-          echo "=== NGROK TUNNEL URL ===" 
+          echo "=== ОТКРЫВАЙ ЭТУ ССЫЛКУ В БРАУЗЕРЕ ===" 
           grep -o 'https://[^"]*ngrok-free.dev' /tmp/ngrok.log || grep -o 'https://[^"]*ngrok-free.app' /tmp/ngrok.log || cat /tmp/ngrok.log
       
       - name: Keep server running

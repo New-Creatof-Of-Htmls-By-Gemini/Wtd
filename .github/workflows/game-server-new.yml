@@ -28,11 +28,22 @@ jobs:
       - name: Download and Extract ISO Game Image
         run: |
           mkdir -p game_files
-          # Скачиваем прямо из релиза ISO образ
-          curl -sSLf "https://github.com/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/download/E/WhatTheDub-RU_v2.2.0.4-TDoT-2.3.iso" -o game.iso
           
-          # Распаковываем ISO образ прямо в папку
-          7z x game.iso -ogame_files/ -y
+          # Получаем прямую ссылку на файл из релиза E через GitHub API
+          ISO_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | grep "browser_download_url" | cut -d '"' -f 4 | head -n 1)
+          
+          echo "Found download URL: $ISO_URL"
+          
+          if [ -z "$ISO_URL" ]; then
+            echo "ОШИБКА: Не удалось получить ссылку на файл из релиза E!"
+            exit 1
+          fi
+
+          # Скачиваем ISO
+          curl -sSLf "$ISO_URL" -o game_file.iso
+          
+          # Распаковываем содержимое
+          7z x game_file.iso -ogame_files/ -y
           echo "=== Распакованные файлы ==="
           ls -R game_files
 
@@ -48,21 +59,22 @@ jobs:
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
+          rm -rf $WINEPREFIX
           wineboot -u
           sleep 5
           
-          # Ищем исполняемый файл игры или инсталлятор внутри ISO
+          # Поиск исполняемого файла игры или инсталлятора
           SETUP_EXE=$(find game_files -iname "*setup*.exe" -o -iname "*install*.exe" | head -n 1)
           MAIN_EXE=$(find game_files -iname "*WhatTheDub*.exe" ! -iname "*setup*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "Запускаем исполняемый файл игры: $MAIN_EXE"
+            echo "Запуск файла игры: $MAIN_EXE"
             wine "$MAIN_EXE" &
           elif [ -n "$SETUP_EXE" ]; then
-            echo "Запускаем установщик: $SETUP_EXE"
+            echo "Запуск установщика: $SETUP_EXE"
             wine "$SETUP_EXE" /VERYSILENT /NORESTART &
           else
-            echo "Ищем любой .exe файл..."
+            echo "Поиск любого .exe файла..."
             ANY_EXE=$(find game_files -name "*.exe" | head -n 1)
             wine "$ANY_EXE" &
           fi
@@ -81,7 +93,7 @@ jobs:
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
         run: |
           if [ -z "$NGROK_AUTHTOKEN" ]; then
-            echo "ОШИБКА: Секрет NGROK_AUTHTOKEN не задан!"
+            echo "ОШИБКА: Секрет NGROK_AUTHTOKEN не задан в Secrets репозитория!"
             exit 1
           fi
           ngrok config add-authtoken $NGROK_AUTHTOKEN

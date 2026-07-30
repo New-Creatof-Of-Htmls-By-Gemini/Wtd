@@ -16,7 +16,7 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq winetricks mesa-utils
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq winetricks cabextract mesa-utils
 
       - name: Install official Ngrok
         run: |
@@ -40,43 +40,49 @@ jobs:
             exit 1
           fi
 
-      - name: Setup Display, Audio & Mesa OpenGL
+      - name: Setup Display & Audio
         run: |
-          # Запускаем виртуальный дисплей с 24-битным цветом
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
           export DISPLAY=:99
           fluxbox &
           
-          # Настройка звука (создаем виртуальный динамик)
           pulseaudio --start --exit-idle-time=-1 || true
           pactl load-module module-null-sink sink_name=dummy || true
           pactl set-default-sink dummy || true
           
           sleep 3
 
-      - name: Run PartyBox with Mesa Software Rendering
+      - name: Install Wine Libraries for Unity & Jackbox
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
           
-          # ВКЛЮЧАЕМ Программный 3D-рендер (чтобы исчез черный экран)
+          wineboot -u
+          sleep 3
+          
+          echo "=== Установка графических библиотек ==="
+          winetricks -q vcrun2015 d3dcompiler_47 d3dx9 || true
+
+      - name: Run PartyBox in Virtual Desktop
+        run: |
+          export DISPLAY=:99
+          export WINEPREFIX=$HOME/.wine_prefix
+          export WINEARCH=win64
+          
           export LIBGL_ALWAYS_SOFTWARE=1
           export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
           export WINEDLLOVERRIDES="mscoree,mshtml=b"
           
-          wineboot -u
-          sleep 3
-          
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "ЗАПУСК PARTYBOX: $MAIN_EXE"
+            echo "ЗАПУСК PARTYBOX В РЕЖИМЕ VIRTUAL DESKTOP: $MAIN_EXE"
             cd "$(dirname "$MAIN_EXE")"
-            wine "$(basename "$MAIN_EXE")" -force-d3d11 > /tmp/game_output.log 2>&1 &
+            
+            wine explorer /desktop=PartyBox,1280x720 "$(basename "$MAIN_EXE")" > /tmp/game_output.log 2>&1 &
           else
-            echo "ОШИБКА: Исполняемый .exe файл не найден внутри ZIP!"
-            ls -R game_files
+            echo "ОШИБКА: Исполняемый .exe файл не найден!"
             exit 1
           fi
 

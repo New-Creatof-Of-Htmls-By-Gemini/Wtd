@@ -69,18 +69,21 @@ jobs:
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
           
+          # Форсируем программный рендеринг Mesa для Xvfb
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+          
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "ЗАПУСК ИГРЫ: $MAIN_EXE"
+            echo "ЗАПУСК ИГРЫ В ВИРТУАЛЬНОМ РАБОЧЕМ СТОЛЕ WINE: $MAIN_EXE"
             cd "$(dirname "$MAIN_EXE")"
             
-            wine "$(basename "$MAIN_EXE")" -popupwindow -screen-width 1280 -screen-height 720 -force-d3d11 > /tmp/game_output.log 2>&1 &
+            # Запуск в окне explorer /desktop гарантирует прорисовку графического окна в Xvfb
+            wine explorer /desktop=Jackbox,1280x720 "$(basename "$MAIN_EXE")" -force-d3d11 > /tmp/game_output.log 2>&1 &
             
-            # Ждем инициализацию и разворачиваем окно на весь экран
-            sleep 12
-            wmctrl -a "The Jackbox Party Pack 7" || wmctrl -a "Jackbox" || true
-            wmctrl -r "The Jackbox Party Pack 7" -b add,fullscreen || true
+            sleep 10
+            wmctrl -a "Jackbox" || wmctrl -a "Wine" || true
           else
             echo "ОШИБКА: Исполняемый .exe файл не найден!"
             exit 1

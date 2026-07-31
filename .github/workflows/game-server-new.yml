@@ -25,22 +25,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Download & Extract Game (ISO/ZIP) from Release E
+      - name: Download ISO from Wormhole & Extract Game
         run: |
           mkdir -p game_files
           
-          # Находим ссылку на .iso или .zip файл в релизе E
-          GAME_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | jq -r '.assets[] | select(.name | test("\\.(iso|zip)$"; "i")) | .browser_download_url' | head -n 1)
+          echo "=== Установка wormhole-william ==="
+          curl -s https://api.github.com/repos/psanford/wormhole-william/releases/latest | grep "browser_download_url.*linux_amd64" | cut -d : -f 2,3 | tr -d \" | xargs curl -sSL -o wormhole
+          chmod +x wormhole
           
-          if [ -n "$GAME_URL" ] && [ "$GAME_URL" != "null" ]; then
-            echo "Скачиваем файл игры: $GAME_URL"
-            curl -sSLf "$GAME_URL" -o game_downloaded_file
-            echo "=== Распаковка через 7zip ==="
-            7z x game_downloaded_file -ogame_files/ -y
-          else
-            echo "ОШИБКА: Файл игры (.iso или .zip) не найден в релизе E!"
-            exit 1
-          fi
+          echo "=== Скачивание JPP7 ISO с Wormhole ==="
+          ./wormhole receive "https://wormhole.app/AyXa3P#uJUkLWtikYCMU-5b7YX3rA" -o game_downloaded.iso
+          
+          echo "=== Распаковка Jackbox Party Pack 7 ==="
+          7z x game_downloaded.iso -ogame_files/ -y
+          rm game_downloaded.iso
 
       - name: Setup Display & Audio
         run: |
@@ -66,15 +64,11 @@ jobs:
           echo "=== Установка графических библиотек ==="
           winetricks -q vcrun2015 d3dcompiler_47 d3dx9 || true
 
-      - name: Run PartyBox in Virtual Desktop
+      - name: Run Jackbox Party Pack 7
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
-          
-          export LIBGL_ALWAYS_SOFTWARE=1
-          export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
-          export WINEDLLOVERRIDES="mscoree,mshtml=b"
           
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
@@ -82,7 +76,7 @@ jobs:
             echo "ЗАПУСК GAME В РЕЖИМЕ VIRTUAL DESKTOP: $MAIN_EXE"
             cd "$(dirname "$MAIN_EXE")"
             
-            wine explorer /desktop=PartyBox,1280x720 "$(basename "$MAIN_EXE")" > /tmp/game_output.log 2>&1 &
+            wine "$(basename "$MAIN_EXE")" -popupwindow -screen-width 1280 -screen-height 720 -force-d3d11 > /tmp/game_output.log 2>&1 &
           else
             echo "ОШИБКА: Исполняемый .exe файл не найден!"
             exit 1

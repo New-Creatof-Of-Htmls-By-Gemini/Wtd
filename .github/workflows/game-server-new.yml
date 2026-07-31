@@ -69,20 +69,21 @@ jobs:
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
           
-          # Форсируем программный рендеринг Mesa для Xvfb
+          # Настройка программного софтверного рендеринга Mesa
           export LIBGL_ALWAYS_SOFTWARE=1
           export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+          export MESA_GL_VERSION_OVERRIDE=4.5
           
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "ЗАПУСК ИГРЫ В ВИРТУАЛЬНОМ РАБОЧЕМ СТОЛЕ WINE: $MAIN_EXE"
+            echo "ЗАПУСК ИГРЫ: $MAIN_EXE"
             cd "$(dirname "$MAIN_EXE")"
             
-            # Запуск в окне explorer /desktop гарантирует прорисовку графического окна в Xvfb
-            wine explorer /desktop=Jackbox,1280x720 "$(basename "$MAIN_EXE")" -force-d3d11 > /tmp/game_output.log 2>&1 &
+            # Запускаем Unity с флагом -force-opengl или -force-d3d11
+            wine explorer /desktop=Jackbox,1280x720 "$(basename "$MAIN_EXE")" -force-opengl -screen-width 1280 -screen-height 720 > /tmp/game_output.log 2>&1 &
             
-            sleep 10
+            sleep 15
             wmctrl -a "Jackbox" || wmctrl -a "Wine" || true
           else
             echo "ОШИБКА: Исполняемый .exe файл не найден!"

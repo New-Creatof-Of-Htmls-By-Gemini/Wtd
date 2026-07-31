@@ -25,20 +25,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Download ISO from Wormhole & Extract Game
+      - name: Download ISO from GitHub Release E & Extract Game
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p game_files
           
-          echo "=== Установка wormhole-william ==="
-          curl -sSL "https://github.com/psanford/wormhole-william/releases/download/v0.8.0/wormhole-william-linux-amd64" -o wormhole
-          chmod +x wormhole
-          
-          echo "=== Скачивание JPP7 ISO с Wormhole ==="
-          ./wormhole receive "https://wormhole.app/AyXa3P#uJUkLWtikYCMU-5b7YX3rA" -o game_downloaded.iso
+          echo "=== Скачиваем JPP7 из Релиза E ==="
+          gh release download E --pattern "*.iso" --dir . --clobber || gh release download E --dir . --clobber
           
           echo "=== Распаковка Jackbox Party Pack 7 ==="
-          7z x game_downloaded.iso -ogame_files/ -y
-          rm game_downloaded.iso
+          ISO_FILE=$(find . -maxdepth 1 -iname "*.iso" -o -iname "*.zip" -o -iname "*.7z" | head -n 1)
+          echo "Найден файл: $ISO_FILE"
+          7z x "$ISO_FILE" -ogame_files/ -y
+          rm -f "$ISO_FILE"
 
       - name: Setup Display & Audio
         run: |
@@ -73,7 +73,7 @@ jobs:
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "ЗАПУСК GAME В РЕЖИМЕ VIRTUAL DESKTOP: $MAIN_EXE"
+            echo "ЗАПУСК ИГРЫ: $MAIN_EXE"
             cd "$(dirname "$MAIN_EXE")"
             
             wine "$(basename "$MAIN_EXE")" -popupwindow -screen-width 1280 -screen-height 720 -force-d3d11 > /tmp/game_output.log 2>&1 &

@@ -26,7 +26,8 @@ jobs:
           echo "=== ICD файлы ==="
           ls /usr/share/vulkan/icd.d/ || true
           echo "=== vulkaninfo (может быть медленным на llvmpipe) ==="
-          VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json vulkaninfo --summary || true
+          LVP_ICD=$(find /usr/share/vulkan/icd.d/ -iname "lvp_icd*.json" | head -n 1)
+          VK_ICD_FILENAMES="$LVP_ICD" vulkaninfo --summary || true
 
       - name: Install official Ngrok
         run: |
@@ -103,7 +104,10 @@ jobs:
           export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
           export MESA_GL_VERSION_OVERRIDE=4.5
           # Программный Vulkan (lavapipe) — нужен и для -force-vulkan, и для DXVK
-          export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          # Путь ищем динамически, т.к. имя файла менялось между версиями Mesa/Ubuntu
+          LVP_ICD=$(find /usr/share/vulkan/icd.d/ -iname "lvp_icd*.json" | head -n 1)
+          echo "Найден lavapipe ICD: $LVP_ICD"
+          export VK_ICD_FILENAMES="$LVP_ICD"
           # Wine debug лог — критично для диагностики черного экрана
           export WINEDEBUG=err+all,fixme-all
 

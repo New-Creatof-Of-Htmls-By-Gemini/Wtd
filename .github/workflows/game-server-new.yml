@@ -1,4 +1,4 @@
-name: PartyBox Server
+ name: PartyBox Server
 
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
           mkdir -p game_files
           
           echo "=== Установка wormhole-william ==="
-          curl -s https://api.github.com/repos/psanford/wormhole-william/releases/latest | grep "browser_download_url.*linux_amd64" | cut -d : -f 2,3 | tr -d \" | xargs curl -sSL -o wormhole
+          curl -sSL "https://github.com/psanford/wormhole-william/releases/download/v0.8.0/wormhole-william-linux-amd64" -o wormhole
           chmod +x wormhole
           
           echo "=== Скачивание JPP7 ISO с Wormhole ==="

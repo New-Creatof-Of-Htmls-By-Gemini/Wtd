@@ -1,4 +1,4 @@
- name: PartyBox Server
+name: PartyBox Server
 
 on:
   push:
@@ -8,10 +8,10 @@ jobs:
   game-server:
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    
+
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Enable i386 architecture & Install dependencies
         run: |
           sudo dpkg --add-architecture i386
@@ -30,15 +30,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p game_files
-          
           echo "=== Скачиваем JPP7 из Релиза E ==="
-          gh release download E --pattern "*.iso" --dir . --clobber || gh release download E --dir . --clobber
+          gh release download E --dir . --clobber
           
           echo "=== Распаковка Jackbox Party Pack 7 ==="
-          ISO_FILE=$(find . -maxdepth 1 -iname "*.iso" -o -iname "*.zip" -o -iname "*.7z" | head -n 1)
-          echo "Найден файл: $ISO_FILE"
-          7z x "$ISO_FILE" -ogame_files/ -y
-          rm -f "$ISO_FILE"
+          ARCHIVE_FILE=$(find . -maxdepth 1 \( -iname "*.iso" -o -iname "*.zip" -o -iname "*.7z" \) | head -n 1)
+          echo "Найден файл: $ARCHIVE_FILE"
+          7z x "$ARCHIVE_FILE" -ogame_files/ -y
+          rm -f "$ARCHIVE_FILE"
 
       - name: Setup Display & Audio
         run: |
@@ -48,7 +47,7 @@ jobs:
           
           pulseaudio --start --exit-idle-time=-1 || true
           pactl load-module module-null-sink sink_name=dummy || true
-          pactl set-default-sink dummy || true
+          pactl set-defaultsink dummy || true
           
           sleep 3
 

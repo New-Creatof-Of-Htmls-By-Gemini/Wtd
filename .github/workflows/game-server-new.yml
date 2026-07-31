@@ -25,18 +25,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Download PartyBox.zip from Release E
+      - name: Download & Extract Game (ISO/ZIP) from Release E
         run: |
           mkdir -p game_files
           
-          ZIP_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | jq -r '.assets[] | select(.name | test("PartyBox\\.zip$"; "i")) | .browser_download_url' | head -n 1)
+          # Находим ссылку на .iso или .zip файл в релизе E
+          GAME_URL=$(curl -s https://api.github.com/repos/New-Creatof-Of-Htmls-By-Gemini/Wtd/releases/tags/E | jq -r '.assets[] | select(.name | test("\\.(iso|zip)$"; "i")) | .browser_download_url' | head -n 1)
           
-          if [ -n "$ZIP_URL" ] && [ "$ZIP_URL" != "null" ]; then
-            curl -sSLf "$ZIP_URL" -o partybox.zip
-            echo "=== Распаковка PartyBox.zip ==="
-            7z x partybox.zip -ogame_files/ -y
+          if [ -n "$GAME_URL" ] && [ "$GAME_URL" != "null" ]; then
+            echo "Скачиваем файл игры: $GAME_URL"
+            curl -sSLf "$GAME_URL" -o game_downloaded_file
+            echo "=== Распаковка через 7zip ==="
+            7z x game_downloaded_file -ogame_files/ -y
           else
-            echo "ОШИБКА: PartyBox.zip не найден в релизе E!"
+            echo "ОШИБКА: Файл игры (.iso или .zip) не найден в релизе E!"
             exit 1
           fi
 
@@ -77,7 +79,7 @@ jobs:
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" | head -n 1)
           
           if [ -n "$MAIN_EXE" ]; then
-            echo "ЗАПУСК PARTYBOX В РЕЖИМЕ VIRTUAL DESKTOP: $MAIN_EXE"
+            echo "ЗАПУСК GAME В РЕЖИМЕ VIRTUAL DESKTOP: $MAIN_EXE"
             cd "$(dirname "$MAIN_EXE")"
             
             wine explorer /desktop=PartyBox,1280x720 "$(basename "$MAIN_EXE")" > /tmp/game_output.log 2>&1 &

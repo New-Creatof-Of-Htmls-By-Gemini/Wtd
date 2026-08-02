@@ -9,12 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
-    # Force GStreamer to a headless sink in CI to avoid caps negotiation failures
+    # Force GStreamer to a headless sink in CI and use a writable registry
     env:
       GST_VIDEOSINK: fakesink
       GST_AUDIOSINK: fakesink
       GST_DEBUG: "2"
       GST_PLUGIN_SYSTEM_PATH: /usr/lib/x86_64-linux-gnu/gstreamer-1.0
+      GST_PLUGIN_PATH: /usr/lib/x86_64-linux-gnu/gstreamer-1.0
+      GST_REGISTRY: /tmp/gstreamer_registry.bin
+      GST_DEBUG_NO_COLOR: "1"
+      GST_DISABLE_REGISTRY_UPDATE: "1"
 
     steps:
       - uses: actions/checkout@v3
@@ -28,6 +32,13 @@ jobs:
             winetricks cabextract mesa-utils wmctrl xdotool imagemagick \
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
             gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools || true
+
+      - name: Verify GStreamer plugins (debug)
+        run: |
+          gst-launch-1.0 --version || true
+          gst-inspect-1.0 --plugin filesrc || true
+          # list a few plugins to confirm they are visible
+          gst-inspect-1.0 playbin || true
 
       - name: Install official Ngrok
         run: |
@@ -73,11 +84,13 @@ jobs:
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
 
-          # ensure the GST envs are available inside this step
+          # propagate GST envs into this shell
           export GST_VIDEOSINK=${GST_VIDEOSINK:-fakesink}
           export GST_AUDIOSINK=${GST_AUDIOSINK:-fakesink}
           export GST_DEBUG=${GST_DEBUG:-2}
           export GST_PLUGIN_SYSTEM_PATH=${GST_PLUGIN_SYSTEM_PATH:-/usr/lib/x86_64-linux-gnu/gstreamer-1.0}
+          export GST_REGISTRY=${GST_REGISTRY:-/tmp/gstreamer_registry.bin}
+          export GST_DISABLE_REGISTRY_UPDATE=${GST_DISABLE_REGISTRY_UPDATE:-1}
 
           wineboot -u
           sleep 5
@@ -91,18 +104,18 @@ jobs:
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
 
-          # ensure GStreamer uses fakesink to avoid caps negotiation errors in headless CI
           export GST_VIDEOSINK=${GST_VIDEOSINK:-fakesink}
           export GST_AUDIOSINK=${GST_AUDIOSINK:-fakesink}
           export GST_DEBUG=${GST_DEBUG:-2}
           export GST_PLUGIN_SYSTEM_PATH=${GST_PLUGIN_SYSTEM_PATH:-/usr/lib/x86_64-linux-gnu/gstreamer-1.0}
+          export GST_REGISTRY=${GST_REGISTRY:-/tmp/gstreamer_registry.bin}
+          export GST_DISABLE_REGISTRY_UPDATE=${GST_DISABLE_REGISTRY_UPDATE:-1}
 
           # Software rendering (Mesa)
           export LIBGL_ALWAYS_SOFTWARE=1
           export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
           export MESA_GL_VERSION_OVERRIDE=4.5
 
-          # Disable winevulkan but allow Media Foundation
           export WINEDLLOVERRIDES="winevulkan=d"
           export WINEDEBUG=err+all,fixme-all
 
@@ -119,7 +132,6 @@ jobs:
           echo "ЗАПУСК ИГРЫ: $MAIN_EXE"
           cd "$(dirname "$MAIN_EXE")"
 
-          # Force DirectX 11 render for Unity
           wine explorer /desktop=game,1280x720 "$(basename "$MAIN_EXE")" -screen-width 1280 -screen-height 720 -force-d3d11 > /tmp/game_output.log 2>&1 &
           GAME_PID=$!
 
@@ -174,7 +186,7 @@ jobs:
           echo "=== ПОСЛЕДНИЕ ЛОГИ ИГРЫ (GAME_OUTPUT) ==="
           echo "=========================================="
           if [ -f /tmp/game_output.log ]; then
-            tail -n 100 /tmp/game_output.log
+            tail -n 200 /tmp/game_output.log
           else
             echo "Файл логов /tmp/game_output.log не найден!"
           fi

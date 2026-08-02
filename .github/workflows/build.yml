@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
-    # Force GStreamer to a headless sink in CI and use a writable registry
+    # Force headless GStreamer and disable winegstreamer in CI
     env:
       GST_VIDEOSINK: fakesink
       GST_AUDIOSINK: fakesink
@@ -17,8 +17,9 @@ jobs:
       GST_PLUGIN_SYSTEM_PATH: /usr/lib/x86_64-linux-gnu/gstreamer-1.0
       GST_PLUGIN_PATH: /usr/lib/x86_64-linux-gnu/gstreamer-1.0
       GST_REGISTRY: /tmp/gstreamer_registry.bin
-      GST_DEBUG_NO_COLOR: "1"
       GST_DISABLE_REGISTRY_UPDATE: "1"
+      GST_DEBUG_NO_COLOR: "1"
+      WINEDLLOVERRIDES: "winegstreamer=d;winevulkan=d"
 
     steps:
       - uses: actions/checkout@v3
@@ -33,11 +34,10 @@ jobs:
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
             gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools || true
 
-      - name: Verify GStreamer plugins (debug)
+      - name: Verify GStreamer and plugins (debug)
         run: |
           gst-launch-1.0 --version || true
           gst-inspect-1.0 --plugin filesrc || true
-          # list a few plugins to confirm they are visible
           gst-inspect-1.0 playbin || true
 
       - name: Install official Ngrok
@@ -91,6 +91,7 @@ jobs:
           export GST_PLUGIN_SYSTEM_PATH=${GST_PLUGIN_SYSTEM_PATH:-/usr/lib/x86_64-linux-gnu/gstreamer-1.0}
           export GST_REGISTRY=${GST_REGISTRY:-/tmp/gstreamer_registry.bin}
           export GST_DISABLE_REGISTRY_UPDATE=${GST_DISABLE_REGISTRY_UPDATE:-1}
+          export WINEDLLOVERRIDES=${WINEDLLOVERRIDES:-"winegstreamer=d;winevulkan=d"}
 
           wineboot -u
           sleep 5
@@ -98,25 +99,26 @@ jobs:
           echo "=== Установка библиотек и Media Foundation ==="
           winetricks -q vcrun2015 vcrun2019 d3dcompiler_47 d3dx9 corefonts mf 2>&1 | tee /tmp/winetricks.log || true
 
-      - name: Run Game
+      - name: Run Game (create .bat + wrapper and launch)
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
 
+          # Ensure GST + WINEDLL envs
           export GST_VIDEOSINK=${GST_VIDEOSINK:-fakesink}
           export GST_AUDIOSINK=${GST_AUDIOSINK:-fakesink}
           export GST_DEBUG=${GST_DEBUG:-2}
           export GST_PLUGIN_SYSTEM_PATH=${GST_PLUGIN_SYSTEM_PATH:-/usr/lib/x86_64-linux-gnu/gstreamer-1.0}
           export GST_REGISTRY=${GST_REGISTRY:-/tmp/gstreamer_registry.bin}
           export GST_DISABLE_REGISTRY_UPDATE=${GST_DISABLE_REGISTRY_UPDATE:-1}
+          export WINEDLLOVERRIDES=${WINEDLLOVERRIDES:-"winegstreamer=d;winevulkan=d"}
 
           # Software rendering (Mesa)
           export LIBGL_ALWAYS_SOFTWARE=1
           export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
           export MESA_GL_VERSION_OVERRIDE=4.5
 
-          export WINEDLLOVERRIDES="winevulkan=d"
           export WINEDEBUG=err+all,fixme-all
 
           echo "=== Все найденные .exe в game_files ==="
@@ -129,26 +131,59 @@ jobs:
             exit 1
           fi
 
+          EXE_NAME=$(basename "$MAIN_EXE")
+          EXE_DIR=$(dirname "$MAIN_EXE")
           echo "ЗАПУСК ИГРЫ: $MAIN_EXE"
-          cd "$(dirname "$MAIN_EXE")"
+          echo "Создаём run_game.bat и run_wrapper.sh в $EXE_DIR"
 
-          wine explorer /desktop=game,1280x720 "$(basename "$MAIN_EXE")" -screen-width 1280 -screen-height 720 -force-d3d11 > /tmp/game_output.log 2>&1 &
-          GAME_PID=$!
+          # create relocatable Windows .bat (uses %~dp0 to run EXE in same folder)
+          cat > "$EXE_DIR/run_game.bat" <<'BAT'
+@echo off
+REM run_game.bat - relocatable launcher that runs the embedded exe
+"%~dp0'"${EXE_NAME}"' %*
+BAT
+          # The above inserted literal ${EXE_NAME} won't expand inside single-quoted here-doc; replace placeholder properly:
+          sed -i "s#\"%~dp0'${EXE_NAME}'%*#\"%~dp0${EXE_NAME}\" %*#g" "$EXE_DIR/run_game.bat" || true
+          # Simpler: overwrite with the correct content expanding EXE_NAME
+          cat > "$EXE_DIR/run_game.bat" <<BAT
+@echo off
+"%~dp0${EXE_NAME}" %*
+BAT
 
-          echo "=== Ожидание появления окна игры ==="
-          for i in $(seq 1 30); do
-            sleep 5
-            if ! kill -0 $GAME_PID 2>/dev/null; then
-              echo "!!! Процесс игры завершился раньше времени."
-              break
-            fi
-            if wmctrl -l | grep -qi "game\|wine"; then
-              echo "Окно найдено на попытке $i"
-              wmctrl -a "game" || wmctrl -a "Wine" || true
-              break
-            fi
-            echo "Попытка $i: окно ещё не появилось, процесс жив..."
-          done
+          # create shell wrapper that sets env and runs the .bat via wine cmd
+          cat > "$EXE_DIR/run_wrapper.sh" <<'SH'
+#!/usr/bin/env bash
+export DISPLAY=:99
+export WINEPREFIX=$HOME/.wine_prefix
+export WINEARCH=win64
+
+# force disabling winegstreamer and winevulkan, and force fakesink for headless CI
+export WINEDLLOVERRIDES="winegstreamer=d;winevulkan=d"
+export GST_VIDEOSINK=${GST_VIDEOSINK:-fakesink}
+export GST_AUDIOSINK=${GST_AUDIOSINK:-fakesink}
+export GST_DEBUG=${GST_DEBUG:-2}
+export GST_PLUGIN_SYSTEM_PATH=${GST_PLUGIN_SYSTEM_PATH:-/usr/lib/x86_64-linux-gnu/gstreamer-1.0}
+export GST_REGISTRY=${GST_REGISTRY:-/tmp/gstreamer_registry.bin}
+export GST_DISABLE_REGISTRY_UPDATE=${GST_DISABLE_REGISTRY_UPDATE:-1}
+
+# run the Windows batch via wine cmd
+cd "$(dirname "$0")"
+wine cmd /c run_game.bat > /tmp/game_output.log 2>&1 &
+echo $! > /tmp/game_pid
+SH
+
+          chmod +x "$EXE_DIR/run_wrapper.sh"
+
+          # start the wrapper
+          (cd "$EXE_DIR" && ./run_wrapper.sh)
+
+          # Wait a bit and print a short status
+          sleep 5
+          if [ -f /tmp/game_pid ]; then
+            echo "Game launched, PID: $(cat /tmp/game_pid)"
+          else
+            echo "Game process did not start or exited early. Check /tmp/game_output.log"
+          fi
 
       - name: Debug screenshot (без VNC)
         if: always()

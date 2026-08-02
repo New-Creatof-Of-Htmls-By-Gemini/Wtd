@@ -10,28 +10,29 @@ jobs:
     timeout-minutes: 180
 
     env:
-      GST_VIDEOSINK: fakesink
-      GST_AUDIOSINK: fakesink
-      GST_DEBUG: "2"
-      GST_PLUGIN_SYSTEM_PATH: /usr/lib/x86_64-linux-gnu/gstreamer-1.0
-      GST_PLUGIN_PATH: /usr/lib/x86_64-linux-gnu/gstreamer-1.0
-      GST_REGISTRY: /tmp/gstreamer_registry.bin
-      GST_DISABLE_REGISTRY_UPDATE: "1"
-      GST_DEBUG_NO_COLOR: "1"
+      DISPLAY: ":99"
+      WINEPREFIX: "/home/runner/.wine_prefix"
+      WINEARCH: "win64"
+      WINEDEBUG: "-all"
+      # Prevent Wine video decoder hangs
       WINEDLLOVERRIDES: "winegstreamer=d;winevulkan=d"
+      # Software OpenGL rendering setup for headless Xvfb
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      MESA_LOADER_DRIVER_OVERRIDE: "llvmpipe"
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
       - name: Enable i386 architecture & Install dependencies
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full \
-            pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq \
-            winetricks cabextract mesa-utils wmctrl xdotool imagemagick \
-            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
-            gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools || true
+          sudo apt-get install -y --no-install-recommends \
+            wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full \
+            pulseaudio fluxbox novnc websockify libgl1-mesa-dri \
+            mesa-utils jq winetricks cabextract \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good || true
 
       - name: Install official Ngrok
         run: |
@@ -45,26 +46,24 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p game_files
-          echo "=== Скачиваем wtd.zip ==="
-          gh release download E --pattern "wtd.zip" --dir . --clobber
+          echo "=== Downloading wtd.zip ==="
+          gh release download E --pattern "wtd.zip" --dir . --clobber || true
 
           if [ -f "wtd.zip" ]; then
             7z x "wtd.zip" -ogame_files/ -y
             rm -f wtd.zip
           else
-            echo "ОШИБКА: wtd.zip не найден в релизе E!"
+            echo "ERROR: wtd.zip not found in Release E!"
             exit 1
           fi
 
-      - name: Setup Display & Audio
+      - name: Setup Virtual Display & Audio
         run: |
-          # Start Xvfb
+          # Start Xvfb with standard 24-bit color depth
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
           sleep 3
 
-          export DISPLAY=:99
-
-          # Start Fluxbox explicitly with logging
+          # Start Window Manager
           fluxbox > /tmp/fluxbox.log 2>&1 &
           sleep 2
 
@@ -73,33 +72,20 @@ jobs:
           pactl load-module module-null-sink sink_name=dummy || true
           pactl set-default-sink dummy || true
 
-      - name: Install Wine Libraries for Unity & Media
+      - name: Setup Wine Prefix & Dependencies
         run: |
-          export DISPLAY=:99
-          export WINEPREFIX=$HOME/.wine_prefix
-          export WINEARCH=win64
-
-          wineboot -u
+          wineboot -init || true
           sleep 5
 
-          echo "=== Установка библиотек ==="
-          winetricks -q vcrun2015 vcrun2019 d3dcompiler_47 d3dx9 corefonts mf 2>&1 | tee /tmp/winetricks.log || true
+          echo "=== Installing Wine runtime dependencies ==="
+          winetricks -q vcrun2015 vcrun2019 d3dcompiler_47 d3dx9 corefonts 2>&1 | tee /tmp/winetricks.log || true
 
-      - name: Run Game & Display Pipeline
+      - name: Run Game Directly
         run: |
-          export DISPLAY=:99
-          export WINEPREFIX=$HOME/.wine_prefix
-          export WINEARCH=win64
-
-          # Software OpenGL settings optimized for Xvfb
-          export LIBGL_ALWAYS_SOFTWARE=1
-          export MESA_LOADER_DRIVER_OVERRIDE=swrast
-          export WINEDEBUG=-all
-
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" ! -iname "*vcredist*" ! -iname "*dxsetup*" | sort -r | head -n 1)
 
           if [ -z "$MAIN_EXE" ]; then
-            echo "ОШИБКА: .exe не найден!"
+            echo "ERROR: .exe file not found!"
             exit 1
           fi
 
@@ -107,21 +93,16 @@ jobs:
           EXE_DIR=$(dirname "$MAIN_EXE")
 
           cd "$EXE_DIR"
+          echo "Launching game: $EXE_NAME inside $EXE_DIR"
 
-          # Launch Wine in explorer/virtual desktop mode so X11/VNC can capture windows cleanly
-          wine explorer /desktop=PartyBox,1280x720 "$EXE_NAME" > /tmp/game_output.log 2>&1 &
+          # Launch Wine directly into standard window mode (force 1280x720 windowed if Unity)
+          wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -screen-fullscreen 0 -force-d3d11 > /tmp/game_output.log 2>&1 &
           echo $! > /tmp/game_pid
 
-          sleep 10
-          if [ -f /tmp/game_pid ]; then
-            echo "Game launched inside Wine virtual desktop, PID: $(cat /tmp/game_pid)"
-          fi
+          sleep 5
 
       - name: Start VNC and Websockify
         run: |
-          export DISPLAY=:99
-          
-          # Start VNC attached directly to Xvfb :99
           x11vnc -display :99 -forever -shared -nopw -listen localhost -rfbport 5900 > /tmp/x11vnc.log 2>&1 &
           sleep 2
 
@@ -134,21 +115,20 @@ jobs:
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
         run: |
           if [ -z "$NGROK_AUTHTOKEN" ]; then
-            echo "ОШИБКА: NGROK_AUTHTOKEN не задан!"
+            echo "ERROR: NGROK_AUTHTOKEN secret is not set!"
             exit 1
           fi
           ngrok config add-authtoken $NGROK_AUTHTOKEN
           ngrok http 6080 --log=stdout > /tmp/ngrok.log 2>&1 &
           sleep 5
-          echo "=== ССЫЛКА НА VNC (ОТКРЫВАЙ В БРАУЗЕРЕ) ==="
+          echo "=== VNC URL ==="
           grep -o 'https://[^\"']*ngrok-free.dev' /tmp/ngrok.log || grep -o 'https://[^\"']*ngrok-free.app' /tmp/ngrok.log || cat /tmp/ngrok.log
 
-      - name: Show Live Logs & Keep Server Alive
+      - name: Show Live Logs & Keep Alive
         run: |
-          echo "=========================================="
-          echo "=== ПОСЛЕДНИЕ ЛОГИ ИГРЫ ==="
+          echo "=== GAME LOG TAIL ==="
           if [ -f /tmp/game_output.log ]; then
             tail -n 50 /tmp/game_output.log
           fi
-          echo "=========================================="
+          echo "======================="
           sleep 10800

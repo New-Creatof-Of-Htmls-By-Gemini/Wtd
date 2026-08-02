@@ -21,13 +21,6 @@ jobs:
             winetricks cabextract mesa-utils wmctrl xdotool imagemagick \
             mesa-vulkan-drivers vulkan-tools libvulkan1
 
-      - name: Verify software Vulkan (lavapipe) is available
-        run: |
-          echo "=== ICD файлы ==="
-          ls /usr/share/vulkan/icd.d/ || true
-          echo "=== vulkaninfo ==="
-          VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json vulkaninfo --summary || true
-
       - name: Install official Ngrok
         run: |
           curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
@@ -78,33 +71,19 @@ jobs:
           echo "=== Установка библиотек ==="
           winetricks -q vcrun2015 vcrun2019 d3dcompiler_47 d3dx9 corefonts 2>&1 | tee /tmp/winetricks.log || true
 
-      - name: Install DXVK
-        run: |
-          export WINEPREFIX=$HOME/.wine_prefix
-
-          DXVK_VER=$(curl -s https://api.github.com/repos/doitsujin/dxvk/releases/latest | jq -r '.tag_name' | sed 's/^v//')
-          echo "DXVK версия: $DXVK_VER"
-          curl -L -o /tmp/dxvk.tar.gz "https://github.com/doitsujin/dxvk/releases/download/v${DXVK_VER}/dxvk-${DXVK_VER}.tar.gz"
-          tar -xzf /tmp/dxvk.tar.gz -C /tmp
-
-          DXVK_DIR="/tmp/dxvk-${DXVK_VER}"
-          cp "$DXVK_DIR"/x64/*.dll "$WINEPREFIX/drive_c/windows/system32/"
-          cp "$DXVK_DIR"/x32/*.dll "$WINEPREFIX/drive_c/windows/syswow64/"
-
-          for dll in d3d9 d3d10core d3d11 dxgi; do
-            WINEPREFIX=$WINEPREFIX WINEARCH=win64 wine reg add "HKEY_CURRENT_USER\Software\Wine\DllOverrides" /v $dll /d native /f
-          done
-
       - name: Run Game
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
 
+          # Программный рендеринг Mesa
           export LIBGL_ALWAYS_SOFTWARE=1
           export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
           export MESA_GL_VERSION_OVERRIDE=4.5
-          export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+
+          # Отключаем winevulkan, чтобы избежать Assertion failed в vkEnumeratePhysicalDevices
+          export WINEDLLOVERRIDES="winevulkan=b"
           export WINEDEBUG=err+all,fixme-all
 
           echo "=== Все найденные .exe в game_files ==="
@@ -120,7 +99,8 @@ jobs:
           echo "ЗАПУСК ИГРЫ: $MAIN_EXE"
           cd "$(dirname "$MAIN_EXE")"
 
-          wine explorer /desktop=game,1280x720 "$(basename "$MAIN_EXE")" -screen-width 1280 -screen-height 720 > /tmp/game_output.log 2>&1 &
+          # Форсируем DirectX 11 рендер для Unity
+          wine explorer /desktop=game,1280x720 "$(basename "$MAIN_EXE")" -screen-width 1280 -screen-height 720 -force-d3d11 > /tmp/game_output.log 2>&1 &
           GAME_PID=$!
 
           echo "=== Ожидание появления окна игры ==="

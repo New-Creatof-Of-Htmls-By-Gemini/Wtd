@@ -139,7 +139,7 @@ jobs:
           # create relocatable Windows .bat (EXE_NAME is expanded now)
           cat > "$EXE_DIR/run_game.bat" <<BAT
 @echo off
-"%~dp0${EXE_NAME}" %*
+"%~dp0$${EXE_NAME}" %*
 BAT
 
           # create shell wrapper that sets env and runs the .bat via wine cmd

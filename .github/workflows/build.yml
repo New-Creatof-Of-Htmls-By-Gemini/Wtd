@@ -99,7 +99,7 @@ jobs:
           echo "=== Установка библиотек и Media Foundation ==="
           winetricks -q vcrun2015 vcrun2019 d3dcompiler_47 d3dx9 corefonts mf 2>&1 | tee /tmp/winetricks.log || true
 
-      - name: Run Game (create .bat + wrapper and launch)
+      - name: Run Game (launch executable)
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
@@ -134,38 +134,11 @@ jobs:
           EXE_NAME=$(basename "$MAIN_EXE")
           EXE_DIR=$(dirname "$MAIN_EXE")
           echo "ЗАПУСК ИГРЫ: $MAIN_EXE"
-          echo "Создаём run_game.bat и run_wrapper.sh в $EXE_DIR"
 
-          # create relocatable Windows .bat safely
-          echo "@echo off" > "$EXE_DIR/run_game.bat"
-          echo "\"%~dp0$EXE_NAME\" %*" >> "$EXE_DIR/run_game.bat"
-
-          # create shell wrapper that sets env and runs the .bat via wine cmd
-          cat > "$EXE_DIR/run_wrapper.sh" <<'SH'
-#!/usr/bin/env bash
-export DISPLAY=:99
-export WINEPREFIX=$HOME/.wine_prefix
-export WINEARCH=win64
-
-# force disabling winegstreamer and winevulkan, and force fakesink for headless CI
-export WINEDLLOVERRIDES="winegstreamer=d;winevulkan=d"
-export GST_VIDEOSINK=${GST_VIDEOSINK:-fakesink}
-export GST_AUDIOSINK=${GST_AUDIOSINK:-fakesink}
-export GST_DEBUG=${GST_DEBUG:-2}
-export GST_PLUGIN_SYSTEM_PATH=${GST_PLUGIN_SYSTEM_PATH:-/usr/lib/x86_64-linux-gnu/gstreamer-1.0}
-export GST_REGISTRY=${GST_REGISTRY:-/tmp/gstreamer_registry.bin}
-export GST_DISABLE_REGISTRY_UPDATE=${GST_DISABLE_REGISTRY_UPDATE:-1}
-
-# run the Windows batch via wine cmd
-cd "$(dirname "$0")"
-wine cmd /c run_game.bat > /tmp/game_output.log 2>&1 &
-echo $! > /tmp/game_pid
-SH
-
-          chmod +x "$EXE_DIR/run_wrapper.sh"
-
-          # start the wrapper
-          (cd "$EXE_DIR" && ./run_wrapper.sh)
+          # Run game directly in background
+          cd "$EXE_DIR"
+          wine "$EXE_NAME" > /tmp/game_output.log 2>&1 &
+          echo $! > /tmp/game_pid
 
           # Wait a bit and print a short status
           sleep 5

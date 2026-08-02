@@ -60,7 +60,7 @@ jobs:
 
           sleep 3
 
-      - name: Install Wine Libraries for Unity & Game
+      - name: Install Wine Libraries for Unity & Media
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
@@ -69,8 +69,8 @@ jobs:
           wineboot -u
           sleep 5
 
-          echo "=== Установка библиотек ==="
-          winetricks -q vcrun2015 vcrun2019 d3dcompiler_47 d3dx9 corefonts 2>&1 | tee /tmp/winetricks.log || true
+          echo "=== Установка библиотек и Media Foundation ==="
+          winetricks -q vcrun2015 vcrun2019 d3dcompiler_47 d3dx9 corefonts mf 2>&1 | tee /tmp/winetricks.log || true
 
       - name: Run Game
         run: |
@@ -83,8 +83,8 @@ jobs:
           export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
           export MESA_GL_VERSION_OVERRIDE=4.5
 
-          # Полностью ОТКЛЮЧАЕМ (=d / disabled) winevulkan и winegstreamer
-          export WINEDLLOVERRIDES="winevulkan=d;winegstreamer=d"
+          # Блокируем только winevulkan, давая Media Foundation работать
+          export WINEDLLOVERRIDES="winevulkan=d"
           export WINEDEBUG=err+all,fixme-all
 
           echo "=== Все найденные .exe в game_files ==="
@@ -165,3 +165,4 @@ jobs:
         run: |
           echo "Сервер запущен!"
           sleep 10800
+          

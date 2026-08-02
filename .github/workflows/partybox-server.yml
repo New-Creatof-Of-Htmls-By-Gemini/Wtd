@@ -84,8 +84,8 @@ jobs:
           export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
           export MESA_GL_VERSION_OVERRIDE=4.5
 
-          # Отключаем winevulkan, чтобы избежать Assertion failed в vkEnumeratePhysicalDevices
-          export WINEDLLOVERRIDES="winevulkan=b"
+          # Блокируем winevulkan и winegstreamer, чтобы миновать зависание видео
+          export WINEDLLOVERRIDES="winevulkan=b;winegstreamer=b"
           export WINEDEBUG=err+all,fixme-all
 
           echo "=== Все найденные .exe в game_files ==="

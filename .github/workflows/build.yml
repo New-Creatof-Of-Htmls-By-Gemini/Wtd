@@ -9,7 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
-    # Force headless GStreamer and disable winegstreamer in CI
     env:
       GST_VIDEOSINK: fakesink
       GST_AUDIOSINK: fakesink
@@ -34,12 +33,6 @@ jobs:
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
             gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools || true
 
-      - name: Verify GStreamer and plugins (debug)
-        run: |
-          gst-launch-1.0 --version || true
-          gst-inspect-1.0 --plugin filesrc || true
-          gst-inspect-1.0 playbin || true
-
       - name: Install official Ngrok
         run: |
           curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
@@ -52,11 +45,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p game_files
-          echo "=== Скачиваем только wtd.zip из Релиза E ==="
+          echo "=== Скачиваем wtd.zip ==="
           gh release download E --pattern "wtd.zip" --dir . --clobber
 
           if [ -f "wtd.zip" ]; then
-            echo "Распаковка wtd.zip в game_files..."
             7z x "wtd.zip" -ogame_files/ -y
             rm -f wtd.zip
           else
@@ -66,17 +58,20 @@ jobs:
 
       - name: Setup Display & Audio
         run: |
+          # Start Xvfb
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
-          sleep 2
+          sleep 3
+
           export DISPLAY=:99
-          fluxbox &
+
+          # Start Fluxbox explicitly with logging
+          fluxbox > /tmp/fluxbox.log 2>&1 &
           sleep 2
 
+          # Start Audio
           pulseaudio --start --exit-idle-time=-1 || true
           pactl load-module module-null-sink sink_name=dummy || true
           pactl set-default-sink dummy || true
-
-          sleep 3
 
       - name: Install Wine Libraries for Unity & Media
         run: |
@@ -84,84 +79,54 @@ jobs:
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
 
-          # propagate GST envs into this shell
-          export GST_VIDEOSINK=${GST_VIDEOSINK:-fakesink}
-          export GST_AUDIOSINK=${GST_AUDIOSINK:-fakesink}
-          export GST_DEBUG=${GST_DEBUG:-2}
-          export GST_PLUGIN_SYSTEM_PATH=${GST_PLUGIN_SYSTEM_PATH:-/usr/lib/x86_64-linux-gnu/gstreamer-1.0}
-          export GST_REGISTRY=${GST_REGISTRY:-/tmp/gstreamer_registry.bin}
-          export GST_DISABLE_REGISTRY_UPDATE=${GST_DISABLE_REGISTRY_UPDATE:-1}
-          export WINEDLLOVERRIDES=${WINEDLLOVERRIDES:-"winegstreamer=d;winevulkan=d"}
-
           wineboot -u
           sleep 5
 
-          echo "=== Установка библиотек и Media Foundation ==="
+          echo "=== Установка библиотек ==="
           winetricks -q vcrun2015 vcrun2019 d3dcompiler_47 d3dx9 corefonts mf 2>&1 | tee /tmp/winetricks.log || true
 
-      - name: Run Game (launch executable)
+      - name: Run Game & Display Pipeline
         run: |
           export DISPLAY=:99
           export WINEPREFIX=$HOME/.wine_prefix
           export WINEARCH=win64
 
-          # Ensure GST + WINEDLL envs
-          export GST_VIDEOSINK=${GST_VIDEOSINK:-fakesink}
-          export GST_AUDIOSINK=${GST_AUDIOSINK:-fakesink}
-          export GST_DEBUG=${GST_DEBUG:-2}
-          export GST_PLUGIN_SYSTEM_PATH=${GST_PLUGIN_SYSTEM_PATH:-/usr/lib/x86_64-linux-gnu/gstreamer-1.0}
-          export GST_REGISTRY=${GST_REGISTRY:-/tmp/gstreamer_registry.bin}
-          export GST_DISABLE_REGISTRY_UPDATE=${GST_DISABLE_REGISTRY_UPDATE:-1}
-          export WINEDLLOVERRIDES=${WINEDLLOVERRIDES:-"winegstreamer=d;winevulkan=d"}
-
-          # Software rendering (Mesa)
+          # Software OpenGL settings optimized for Xvfb
           export LIBGL_ALWAYS_SOFTWARE=1
-          export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
-          export MESA_GL_VERSION_OVERRIDE=4.5
-
-          export WINEDEBUG=err+all,fixme-all
-
-          echo "=== Все найденные .exe в game_files ==="
-          find game_files -iname "*.exe"
+          export MESA_LOADER_DRIVER_OVERRIDE=swrast
+          export WINEDEBUG=-all
 
           MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" ! -iname "*vcredist*" ! -iname "*dxsetup*" | sort -r | head -n 1)
 
           if [ -z "$MAIN_EXE" ]; then
-            echo "ОШИБКА: Исполняемый .exe файл не найден!"
+            echo "ОШИБКА: .exe не найден!"
             exit 1
           fi
 
           EXE_NAME=$(basename "$MAIN_EXE")
           EXE_DIR=$(dirname "$MAIN_EXE")
-          echo "ЗАПУСК ИГРЫ: $MAIN_EXE"
 
-          # Run game directly in background
           cd "$EXE_DIR"
-          wine "$EXE_NAME" > /tmp/game_output.log 2>&1 &
+
+          # Launch Wine in explorer/virtual desktop mode so X11/VNC can capture windows cleanly
+          wine explorer /desktop=PartyBox,1280x720 "$EXE_NAME" > /tmp/game_output.log 2>&1 &
           echo $! > /tmp/game_pid
 
-          # Wait a bit and print a short status
-          sleep 5
+          sleep 10
           if [ -f /tmp/game_pid ]; then
-            echo "Game launched, PID: $(cat /tmp/game_pid)"
-          else
-            echo "Game process did not start or exited early. Check /tmp/game_output.log"
+            echo "Game launched inside Wine virtual desktop, PID: $(cat /tmp/game_pid)"
           fi
-
-      - name: Debug screenshot (без VNC)
-        if: always()
-        run: |
-          export DISPLAY=:99
-          import -window root /tmp/screenshot.png || true
 
       - name: Start VNC and Websockify
         run: |
           export DISPLAY=:99
-          x11vnc -display :99 -forever -nopw -listen localhost -rfbport 5900 &
+          
+          # Start VNC attached directly to Xvfb :99
+          x11vnc -display :99 -forever -shared -nopw -listen localhost -rfbport 5900 > /tmp/x11vnc.log 2>&1 &
           sleep 2
 
           sudo cp /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html
-          websockify --web=/usr/share/novnc/ 6080 localhost:5900 &
+          websockify --web=/usr/share/novnc/ 6080 localhost:5900 > /tmp/websockify.log 2>&1 &
           sleep 2
 
       - name: Setup ngrok tunnel
@@ -169,7 +134,7 @@ jobs:
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
         run: |
           if [ -z "$NGROK_AUTHTOKEN" ]; then
-            echo "ОШИБКА: Секрет NGROK_AUTHTOKEN не задан!"
+            echo "ОШИБКА: NGROK_AUTHTOKEN не задан!"
             exit 1
           fi
           ngrok config add-authtoken $NGROK_AUTHTOKEN
@@ -178,19 +143,12 @@ jobs:
           echo "=== ССЫЛКА НА VNC (ОТКРЫВАЙ В БРАУЗЕРЕ) ==="
           grep -o 'https://[^\"']*ngrok-free.dev' /tmp/ngrok.log || grep -o 'https://[^\"']*ngrok-free.app' /tmp/ngrok.log || cat /tmp/ngrok.log
 
-      - name: Show Live Game Logs
+      - name: Show Live Logs & Keep Server Alive
         run: |
           echo "=========================================="
-          echo "=== ПОСЛЕДНИЕ ЛОГИ ИГРЫ (GAME_OUTPUT) ==="
-          echo "=========================================="
+          echo "=== ПОСЛЕДНИЕ ЛОГИ ИГРЫ ==="
           if [ -f /tmp/game_output.log ]; then
-            tail -n 200 /tmp/game_output.log
-          else
-            echo "Файл логов /tmp/game_output.log не найден!"
+            tail -n 50 /tmp/game_output.log
           fi
           echo "=========================================="
-
-      - name: Keep server running
-        run: |
-          echo "Сервер запущен!"
           sleep 10800

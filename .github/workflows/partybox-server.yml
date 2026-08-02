@@ -19,7 +19,9 @@ jobs:
           sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full \
             pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq \
             winetricks cabextract mesa-utils wmctrl xdotool imagemagick \
-            mesa-vulkan-drivers vulkan-tools libvulkan1
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools \
+            gstreamer1.0-plugins-bad:i386 gstreamer1.0-plugins-ugly:i386 gstreamer1.0-libav:i386 || true
 
       - name: Install official Ngrok
         run: |

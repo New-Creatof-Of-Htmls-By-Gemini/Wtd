@@ -136,15 +136,7 @@ jobs:
           echo "ЗАПУСК ИГРЫ: $MAIN_EXE"
           echo "Создаём run_game.bat и run_wrapper.sh в $EXE_DIR"
 
-          # create relocatable Windows .bat (uses %~dp0 to run EXE in same folder)
-          cat > "$EXE_DIR/run_game.bat" <<'BAT'
-@echo off
-REM run_game.bat - relocatable launcher that runs the embedded exe
-"%~dp0'"${EXE_NAME}"' %*
-BAT
-          # The above inserted literal ${EXE_NAME} won't expand inside single-quoted here-doc; replace placeholder properly:
-          sed -i "s#\"%~dp0'${EXE_NAME}'%*#\"%~dp0${EXE_NAME}\" %*#g" "$EXE_DIR/run_game.bat" || true
-          # Simpler: overwrite with the correct content expanding EXE_NAME
+          # create relocatable Windows .bat (EXE_NAME is expanded now)
           cat > "$EXE_DIR/run_game.bat" <<BAT
 @echo off
 "%~dp0${EXE_NAME}" %*

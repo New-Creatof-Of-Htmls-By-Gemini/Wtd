@@ -13,23 +13,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. Проверяем файлы сервера
-      - name: Verify PartyBox Files
-        working-directory: "PK PartyBox"
+      # 1. Поиск и проверка файлов PartyBox
+      - name: Verify and Locate PartyBox
         shell: powershell
         run: |
-          echo "Checking PartyBox files..."
-          if (-not (Test-Path "PartyBox.exe")) { Write-Error "PartyBox.exe not found!"; exit 1 }
-          if (-not (Test-Path "Intro.mp4")) { Write-Error "Intro.mp4 not found!"; exit 1 }
+          echo "Looking for PartyBox.exe in workspace..."
+          $exe = Get-ChildItem -Recurse -Filter "PartyBox.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          
+          if ($exe) {
+            Write-Host "Found PartyBox.exe at: $($exe.FullName)"
+            # Сохраняем папку с exe во переменную среды для следующих шагов
+            Add-Content -Path $env:GITHUB_ENV -Value "PARTYBOX_DIR=$($exe.DirectoryName)"
+          } else {
+            Write-Error "PartyBox.exe was not found anywhere in the repository!"
+            exit 1
+          }
 
-      # 2. Устанавливаем TightVNC и ngrok
+      # 2. Установка TightVNC и ngrok
       - name: Install VNC and ngrok
         shell: powershell
         run: |
           choco install tightvnc -y
           choco install ngrok -y
 
-      # 3. Настраиваем и запускаем VNC
+      # 3. Настройка и запуск VNC
       - name: Configure and Start VNC Server
         shell: powershell
         run: |
@@ -37,7 +44,7 @@ jobs:
           Set-ItemProperty -Path "HKLM:\Software\TightVNC\Server" -Name "Password" -Value $vncPass -ErrorAction SilentlyContinue
           net start "TightVNC Server"
 
-      # 4. Пробрасываем ngrok с твоим NGROK_AUTHTOKEN
+      # 4. Проброс ngrok
       - name: Start ngrok Tunnel
         env:
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
@@ -50,7 +57,7 @@ jobs:
           ngrok config add-authtoken $env:NGROK_AUTHTOKEN
           Start-Process -FilePath "ngrok" -ArgumentList "tcp 5900" -NoNewWindow
 
-      # 5. Выводим ссылку для подключения
+      # 5. Вывод ссылки VNC
       - name: Get VNC Connection URL
         shell: powershell
         run: |
@@ -63,10 +70,11 @@ jobs:
           echo "Default Password: 123456"
           echo "===================================================="
 
-      # 6. Запускаем PartyBox
+      # 6. Запуск PartyBox из найденной папки
       - name: Launch PartyBox Server
-        working-directory: "PK PartyBox"
         shell: powershell
         run: |
+          Set-Location "$env:PARTYBOX_DIR"
+          echo "Launching PartyBox.exe from $(Get-Location)..."
           Start-Process -FilePath ".\PartyBox.exe" -NoNewWindow
           while ($true) { Start-Sleep -Seconds 60 }

@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. Скачиваем ZIP из последнего GitHub Release
+      # 1. Скачиваем ZIP из последнего GitHub Release и распаковываем
       - name: Download Release Asset
         shell: powershell
         env:
@@ -32,17 +32,22 @@ jobs:
             exit 1
           }
 
-      # 2. Ищем PartyBox.exe в распакованном релизе
-      - name: Locate PartyBox.exe
+      # 2. Ищем ЛЮБОЙ .exe внутри распакованного архива и выводим структуру
+      - name: Locate Executable
         shell: powershell
         run: |
-          $exe = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\extracted" -Recurse -Filter "PartyBox.exe" | Select-Object -First 1
+          echo "--- Content of extracted archive ---"
+          Get-ChildItem -Path "$env:GITHUB_WORKSPACE\extracted" -Recurse | Select-Object FullName
+          
+          # Ищем PartyBox.exe или любой .exe внутри
+          $exe = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\extracted" -Recurse -Filter "*.exe" | Select-Object -First 1
           
           if ($exe) {
-            Write-Host "Found PartyBox.exe at: $($exe.FullName)"
+            Write-Host "FOUND EXE: $($exe.FullName)"
+            Add-Content -Path $env:GITHUB_ENV -Value "PARTYBOX_EXE=$($exe.FullName)"
             Add-Content -Path $env:GITHUB_ENV -Value "PARTYBOX_DIR=$($exe.DirectoryName)"
           } else {
-            Write-Error "PartyBox.exe not found inside the downloaded release archive!"
+            Write-Error "No .exe file found inside the extracted archive!"
             exit 1
           }
 
@@ -74,7 +79,7 @@ jobs:
           ngrok config add-authtoken $env:NGROK_AUTHTOKEN
           Start-Process -FilePath "ngrok" -ArgumentList "tcp 5900" -NoNewWindow
 
-      # 6. Ссылка подключения
+      # 6. Вывод ссылки подключения VNC
       - name: Get VNC Connection URL
         shell: powershell
         run: |
@@ -87,11 +92,17 @@ jobs:
           echo "Default Password: 123456"
           echo "===================================================="
 
-      # 7. Запуск сервера
-      - name: Launch PartyBox Server
+      # 7. Запуск сервера и удержание процесса
+      - name: Launch PartyBox Server & Keep Alive
         shell: powershell
         run: |
           Set-Location "$env:PARTYBOX_DIR"
-          echo "Launching PartyBox.exe from $(Get-Location)..."
-          Start-Process -FilePath ".\PartyBox.exe" -NoNewWindow
-          while ($true) { Start-Sleep -Seconds 60 }
+          echo "Launching server executable from $(Get-Location)..."
+          
+          # Запускаем процесс и сохраняем его объект
+          $process = Start-Process -FilePath "$env:PARTYBOX_EXE" -PassThru -NoNewWindow
+          
+          echo "Server is running (PID: $($process.Id)). Holding runner alive..."
+          
+          # Ждём завершения процесса сервера (или держим раннер живым)
+          $process.WaitForExit()

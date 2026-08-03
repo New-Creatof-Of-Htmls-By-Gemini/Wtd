@@ -1,4 +1,4 @@
-name: PartyBox Server CI/CD
+name: PartyBox Server with VNC & ngrok
 
 on:
   push:
@@ -6,24 +6,67 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-run:
+  run-vnc-server:
     runs-on: windows-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 1. Проверяем файлы сервера
       - name: Verify PartyBox Files
+        working-directory: "PK PartyBox"
         shell: powershell
         run: |
-          echo "Checking PartyBox directory structure..."
-          if (Test-Path "PK PartyBox/PartyBox.exe") { Write-Host "PartyBox.exe found." } else { Write-Error "PartyBox.exe missing!"; exit 1 }
-          if (Test-Path "PK PartyBox/Intro.mp4") { Write-Host "Intro.mp4 found." } else { Write-Error "Intro.mp4 missing!"; exit 1 }
-          if (Test-Path "PK PartyBox/D3D12/D3D12Core.dll") { Write-Host "D3D12Core.dll found." } else { Write-Error "D3D12Core.dll missing!"; exit 1 }
+          echo "Checking PartyBox files..."
+          if (-not (Test-Path "PartyBox.exe")) { Write-Error "PartyBox.exe not found!"; exit 1 }
+          if (-not (Test-Path "Intro.mp4")) { Write-Error "Intro.mp4 not found!"; exit 1 }
 
-      - name: Setup Direct3D 12 Environment & Launch
+      # 2. Устанавливаем TightVNC и ngrok
+      - name: Install VNC and ngrok
         shell: powershell
         run: |
-          cd "PK PartyBox"
-          # Запуск сервера
-          Start-Process -FilePath ".\PartyBox.exe" -ArgumentList "--headless" -NoNewWindow
+          choco install tightvnc -y
+          choco install ngrok -y
+
+      # 3. Настраиваем и запускаем VNC
+      - name: Configure and Start VNC Server
+        shell: powershell
+        run: |
+          $vncPass = "123456"
+          Set-ItemProperty -Path "HKLM:\Software\TightVNC\Server" -Name "Password" -Value $vncPass -ErrorAction SilentlyContinue
+          net start "TightVNC Server"
+
+      # 4. Пробрасываем ngrok с твоим NGROK_AUTHTOKEN
+      - name: Start ngrok Tunnel
+        env:
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
+        shell: powershell
+        run: |
+          if (-not $env:NGROK_AUTHTOKEN) {
+            Write-Error "NGROK_AUTHTOKEN is missing in GitHub Secrets!"
+            exit 1
+          }
+          ngrok config add-authtoken $env:NGROK_AUTHTOKEN
+          Start-Process -FilePath "ngrok" -ArgumentList "tcp 5900" -NoNewWindow
+
+      # 5. Выводим ссылку для подключения
+      - name: Get VNC Connection URL
+        shell: powershell
+        run: |
+          Start-Sleep -Seconds 5
+          $log = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
+          $publicUrl = $log.tunnels[0].public_url
+          echo "===================================================="
+          echo "VNC SERVER IS READY!"
+          echo "Connect via VNC Viewer to: $publicUrl"
+          echo "Default Password: 123456"
+          echo "===================================================="
+
+      # 6. Запускаем PartyBox
+      - name: Launch PartyBox Server
+        working-directory: "PK PartyBox"
+        shell: powershell
+        run: |
+          Start-Process -FilePath ".\PartyBox.exe" -NoNewWindow
+          while ($true) { Start-Sleep -Seconds 60 }

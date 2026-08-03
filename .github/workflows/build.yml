@@ -1,4 +1,4 @@
-name: PartyBox Server
+name: PartyBox Server (What The Dub ISO)
 
 on:
   push:
@@ -9,30 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
-    env:
-      DISPLAY: ":99"
-      WINEPREFIX: "/home/runner/.wine_prefix"
-      WINEARCH: "win64"
-      WINEDEBUG: "-all"
-      # Prevent Wine video decoder hangs
-      WINEDLLOVERRIDES: "winegstreamer=d;winevulkan=d"
-      # Software OpenGL rendering setup for headless Xvfb
-      LIBGL_ALWAYS_SOFTWARE: "1"
-      MESA_LOADER_DRIVER_OVERRIDE: "llvmpipe"
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Enable i386 architecture & Install dependencies
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full \
-            pulseaudio fluxbox novnc websockify libgl1-mesa-dri \
-            mesa-utils jq winetricks cabextract \
-            gstreamer1.0-plugins-base gstreamer1.0-plugins-good || true
+          sudo apt-get install -y wine64 wine32:i386 xvfb x11vnc curl unzip p7zip-full \
+            pulseaudio fluxbox novnc websockify libgl1 libglx-mesa0 libgl1-mesa-dri jq \
+            winetricks cabextract mesa-utils wmctrl xdotool imagemagick || true
 
       - name: Install official Ngrok
         run: |
@@ -41,73 +27,103 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ngrok
 
-      - name: Download and Extract wtd.zip from Release E
+      - name: Download and Extract ISO from Release E
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p game_files
-          echo "=== Downloading wtd.zip ==="
-          gh release download E --pattern "wtd.zip" --dir . --clobber || true
+          echo "=== Скачиваем WhatTheDub-En_v2.2.0.4.iso из Релиза E ==="
+          gh release download E --pattern "WhatTheDub-En_v2.2.0.4.iso" --dir . --clobber
 
-          if [ -f "wtd.zip" ]; then
-            7z x "wtd.zip" -ogame_files/ -y
-            rm -f wtd.zip
+          if [ -f "WhatTheDub-En_v2.2.0.4.iso" ]; then
+            echo "Распаковка ISO в game_files..."
+            7z x "WhatTheDub-En_v2.2.0.4.iso" -ogame_files/ -y
+            rm -f WhatTheDub-En_v2.2.0.4.iso
           else
-            echo "ERROR: wtd.zip not found in Release E!"
+            echo "ОШИБКА: ISO файл не найден в релизе E!"
             exit 1
           fi
 
-      - name: Setup Virtual Display & Audio
+      - name: Setup Display & Audio
         run: |
-          # Start Xvfb with standard 24-bit color depth
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
-          sleep 3
-
-          # Start Window Manager
-          fluxbox > /tmp/fluxbox.log 2>&1 &
+          sleep 2
+          export DISPLAY=:99
+          fluxbox &
           sleep 2
 
-          # Start Audio
           pulseaudio --start --exit-idle-time=-1 || true
           pactl load-module module-null-sink sink_name=dummy || true
           pactl set-default-sink dummy || true
 
-      - name: Setup Wine Prefix & Dependencies
+          sleep 3
+
+      - name: Install Wine Libraries
         run: |
-          wineboot -init || true
+          export DISPLAY=:99
+          export WINEPREFIX=$HOME/.wine_prefix
+          export WINEARCH=win64
+
+          wineboot -u
           sleep 5
 
-          echo "=== Installing Wine runtime dependencies ==="
+          echo "=== Установка базовых библиотек ==="
           winetricks -q vcrun2015 vcrun2019 d3dcompiler_47 d3dx9 corefonts 2>&1 | tee /tmp/winetricks.log || true
 
-      - name: Run Game Directly
+      - name: Run Game
         run: |
-          MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" ! -iname "*vcredist*" ! -iname "*dxsetup*" | sort -r | head -n 1)
+          export DISPLAY=:99
+          export WINEPREFIX=$HOME/.wine_prefix
+          export WINEARCH=win64
+
+          # Софтверный рендеринг Mesa
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+          export MESA_GL_VERSION_OVERRIDE=4.5
+
+          # Блокируем системный vulkan
+          export WINEDLLOVERRIDES="winevulkan=d"
+          export WINEDEBUG=err+all,fixme-all
+
+          echo "=== Ищем исполняемый .exe файл ==="
+          MAIN_EXE=$(find game_files -type f -iname "*.exe" ! -iname "*unins*" ! -iname "*UnityCrashHandler*" ! -iname "*vcredist*" ! -iname "*dxsetup*" ! -iname "*setup*" | sort -r | head -n 1)
 
           if [ -z "$MAIN_EXE" ]; then
-            echo "ERROR: .exe file not found!"
+            echo "ОШИБКА: Исполняемый .exe файл не найден!"
+            echo "Все найденные файлы:"
+            find game_files
             exit 1
           fi
 
-          EXE_NAME=$(basename "$MAIN_EXE")
-          EXE_DIR=$(dirname "$MAIN_EXE")
+          echo "ЗАПУСК ИГРЫ: $MAIN_EXE"
+          cd "$(dirname "$MAIN_EXE")"
 
-          cd "$EXE_DIR"
-          echo "Launching game: $EXE_NAME inside $EXE_DIR"
+          wine explorer /desktop=game,1280x720 "$(basename "$MAIN_EXE")" -screen-width 1280 -screen-height 720 -force-d3d11 > /tmp/game_output.log 2>&1 &
+          GAME_PID=$!
 
-          # Launch Wine directly into standard window mode (force 1280x720 windowed if Unity)
-          wine "$EXE_NAME" -screen-width 1280 -screen-height 720 -screen-fullscreen 0 -force-d3d11 > /tmp/game_output.log 2>&1 &
-          echo $! > /tmp/game_pid
-
-          sleep 5
+          echo "=== Ожидание появления окна игры ==="
+          for i in $(seq 1 30); do
+            sleep 5
+            if ! kill -0 $GAME_PID 2>/dev/null; then
+              echo "!!! Процесс игры завершился раньше времени."
+              break
+            fi
+            if wmctrl -l | grep -qi "game\|wine\|dub"; then
+              echo "Окно найдено на попытке $i"
+              wmctrl -a "game" || wmctrl -a "Wine" || true
+              break
+            fi
+            echo "Попытка $i: окно ещё не появилось..."
+          done
 
       - name: Start VNC and Websockify
         run: |
-          x11vnc -display :99 -forever -shared -nopw -listen localhost -rfbport 5900 > /tmp/x11vnc.log 2>&1 &
+          export DISPLAY=:99
+          x11vnc -display :99 -forever -nopw -listen localhost -rfbport 5900 &
           sleep 2
 
           sudo cp /usr/share/novnc/vnc_lite.html /usr/share/novnc/index.html
-          websockify --web=/usr/share/novnc/ 6080 localhost:5900 > /tmp/websockify.log 2>&1 &
+          websockify --web=/usr/share/novnc/ 6080 localhost:5900 &
           sleep 2
 
       - name: Setup ngrok tunnel
@@ -115,20 +131,26 @@ jobs:
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
         run: |
           if [ -z "$NGROK_AUTHTOKEN" ]; then
-            echo "ERROR: NGROK_AUTHTOKEN secret is not set!"
+            echo "ОШИБКА: Секрет NGROK_AUTHTOKEN не задан!"
             exit 1
           fi
           ngrok config add-authtoken $NGROK_AUTHTOKEN
           ngrok http 6080 --log=stdout > /tmp/ngrok.log 2>&1 &
           sleep 5
-          echo "=== VNC URL ==="
-          grep -o 'https://[^\"']*ngrok-free.dev' /tmp/ngrok.log || grep -o 'https://[^\"']*ngrok-free.app' /tmp/ngrok.log || cat /tmp/ngrok.log
+          echo "=== ССЫЛКА НА VNC ==="
+          grep -o 'https://[^"]*ngrok-free.dev' /tmp/ngrok.log || grep -o 'https://[^"]*ngrok-free.app' /tmp/ngrok.log || cat /tmp/ngrok.log
 
-      - name: Show Live Logs & Keep Alive
+      - name: Show Live Game Logs
         run: |
-          echo "=== GAME LOG TAIL ==="
+          echo "=========================================="
+          echo "=== ПОСЛЕДНИЕ ЛОГИ ИГРЫ (GAME_OUTPUT) ==="
+          echo "=========================================="
           if [ -f /tmp/game_output.log ]; then
-            tail -n 50 /tmp/game_output.log
+            tail -n 100 /tmp/game_output.log
           fi
-          echo "======================="
+          echo "=========================================="
+
+      - name: Keep server running
+        run: |
+          echo "Сервер запущен!"
           sleep 10800
